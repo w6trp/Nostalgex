@@ -96,6 +96,16 @@ extension AnalyticsChannelDescriptor {
     /// (`BundledChannelNames.name(forStaticChannelID:)`) reads from the app
     /// bundle only, never the server-hosted override — that guarantee is
     /// the whole reason we don't just use `channel.name` here.
+    private static let staticBundles: Set<String> = [
+        "adventureland", "arthouse", "decades", "essentials", "franchise", "franchises",
+        "high-rotation", "kids", "nostalgex", "premium", "seasonal", "sports", "streamers", "truecrime"
+    ]
+
+    static func safeStaticBundle(_ category: String?) -> String {
+        guard let category, staticBundles.contains(category) else { return "uncategorized" }
+        return category
+    }
+
     static func describe(
         _ channel: Channel,
         staticNameLookup: (Int) -> String? = BundledChannelNames.name(forStaticChannelID:)
@@ -114,7 +124,7 @@ extension AnalyticsChannelDescriptor {
             kind: .static,
             channelID: channel.id,
             channelName: staticNameLookup(channel.id),
-            bundle: channel.category ?? "uncategorized"
+            bundle: safeStaticBundle(channel.category)
         )
     }
 }

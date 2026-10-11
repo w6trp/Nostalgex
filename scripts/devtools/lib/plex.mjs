@@ -1,26 +1,11 @@
 // Plex API wrapper. Reads PLEX_URL and PLEX_TOKEN from env at module load.
 //
-// Notes:
-//   - Plex Media Server uses a self-signed TLS cert (the *.plex.direct hostname
-//     trick wraps it for browsers, but Node still rejects). We use an undici
-//     Agent with rejectUnauthorized: false because this dev tool is hitting
-//     YOUR OWN local server — set PLEX_STRICT_TLS=1 to opt back into strict.
-//   - 30s per-request timeout so a hung Plex doesn't freeze the audit forever.
-//   - One retry on transient fetch failures (TLS handshake hiccup, ECONNRESET).
-
+// TLS uses Node's normal certificate validation. For a private CA, launch with
+// NODE_EXTRA_CA_CERTS=/path/to/ca.pem; no process-wide validation bypass.
 const PLEX_URL = (process.env.PLEX_URL || "").replace(/\/$/, "");
 const PLEX_TOKEN = process.env.PLEX_TOKEN || "";
-const STRICT_TLS = process.env.PLEX_STRICT_TLS === "1";
-
 export const plexConfigured = Boolean(PLEX_URL && PLEX_TOKEN);
 export const plexHost = PLEX_URL;
-
-// undici (Node's fetch) doesn't take a https.Agent directly. The simplest
-// portable workaround is to set NODE_TLS_REJECT_UNAUTHORIZED for the process.
-// We do it once at module load if STRICT_TLS isn't set.
-if (plexConfigured && !STRICT_TLS) {
-  process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-}
 
 const TIMEOUT_MS = 30_000;
 
@@ -40,7 +25,7 @@ function describeFetchError(err, path) {
   const code = cause?.code || err?.code;
   const causeMsg = cause?.message || err?.message || "unknown";
   if (code === "DEPTH_ZERO_SELF_SIGNED_CERT" || code === "SELF_SIGNED_CERT_IN_CHAIN" || code === "UNABLE_TO_VERIFY_LEAF_SIGNATURE") {
-    return `TLS rejected Plex's self-signed cert (${code}). Restart the server WITHOUT PLEX_STRICT_TLS=1, or use http:// instead of https://. Path: ${path}`;
+    return `TLS rejected Plex's self-signed cert (${code}). Use a valid certificate or configure NODE_EXTRA_CA_CERTS with your private CA. Path: ${path}`;
   }
   if (code === "ECONNREFUSED") return `Plex refused the connection — is it running at ${PLEX_URL}? Path: ${path}`;
   if (code === "ENOTFOUND") return `DNS could not resolve ${PLEX_URL}. Path: ${path}`;

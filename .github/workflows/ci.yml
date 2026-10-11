@@ -63,6 +63,12 @@ jobs:
               - 'scripts/nostalgex-daily-manifest.js'
               - 'scripts/nostalgex-filter-smoke.mjs'
               - 'scripts/nostalgex-schedule-order-smoke.mjs'
+              - 'scripts/*smoke.mjs'
+              - 'scripts/nostalgex-*.js'
+              - 'web-tuner.html'
+              - 'scripts/devtools/**'
+              - 'api/subscribe.js'
+              - 'plex-tuner.html'
 
   channel-engine:
     name: Channel engine (rule parity, schedule order, docs)
@@ -112,11 +118,14 @@ jobs:
     name: tvOS unit tests (NostalgexTests)
     needs: changes
     if: ${{ needs.changes.outputs.tvos == 'true' }}
-    runs-on: macos-15
+    runs-on: macos-26
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
 
-      # tvOS deployment target must be ≤ SDK on the runner (GitHub ships Xcode 16.x; tvOS 26 SDK is not available).
+      # Pin the tested simulator toolchain instead of following the runner default.
+      # Physical devices running tvOS 27 require the local Xcode 27 setup in docs/FORK-TESTING.md.
       - name: Xcode and simulators
         run: |
           xcodebuild -version

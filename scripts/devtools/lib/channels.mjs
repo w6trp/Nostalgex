@@ -13,13 +13,10 @@ const CF = require("../../nostalgex-channel-filter.cjs");
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CHANNELS_JSON = join(__dirname, "..", "..", "..", "Nostalgex", "Nostalgex", "channels.json");
 
-const UNSUPPORTED_RULE_KEYS = [
-  "excludeKeywords",
-  "networks",
-  "excludeNetworks",
-  "ratingMin",
-];
-const PARTIAL_RULE_KEYS = ["productionCompanies", "studios"];
+// The shared filter implements these rules. Missing enrichment, not missing
+// rule evaluation, is why a devtools pool can differ from an enriched tvOS pool.
+const UNSUPPORTED_RULE_KEYS = [];
+const PARTIAL_RULE_KEYS = ["networks", "productionCompanies", "studios", "imdbRatingMin", "imdbVotesMin", "rtScoreMin", "metacriticMin", "wonOscar"];
 
 let cached = null;
 

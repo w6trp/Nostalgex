@@ -94,11 +94,11 @@ const RULE_LABELS = {
   excludeNetworks: "Excluded networks (TMDB)",
   prodCos: "Production companies (TMDB)",
   excludeProdCos: "Excluded production companies (TMDB)",
-  ratingMin: "Min rating (OMDb)",
+  ratingMin: "Min rating (Plex)",
   collections: "Plex collections",
 };
 
-const UNSUPPORTED = new Set(["keywords", "excludeKeywords", "networks", "excludeNetworks", "keywordsRequireAnyGenre", "keywordsExclude", "ratingMin"]);
+const UNSUPPORTED = new Set(["networks", "productionCompanies", "imdbRatingMin", "imdbVotesMin", "rtScoreMin", "metacriticMin", "wonOscar"]);
 const PARTIAL = new Set(["productionCompanies", "studios"]);
 
 function formatRuleValue(key, val) {

@@ -208,18 +208,11 @@ enum JellyfinPlaybackResolver {
         let audio = (streams ?? []).filter { $0.mediaType?.lowercased() == "audio" }
         guard audio.count > 1 else { return nil }
 
-        // "en-GB" and "eng" both have to match a track tagged "eng" or "en".
-        let wanted = Set(preferredLanguages.compactMap {
-            Locale(identifier: $0).language.languageCode?.identifier.lowercased()
-        } + ["en"])
-        func matches(_ language: String?) -> Bool {
-            guard let l = language?.lowercased(), !l.isEmpty else { return false }
-            return wanted.contains(String(l.prefix(2)))
-        }
-
-        let inLanguage = audio.filter { matches($0.Language) }
-        if let best = inLanguage.max(by: { ($0.Channels ?? 0) < ($1.Channels ?? 0) }) {
-            return best.Index
+        // Respect preference order. Never add English to an explicit language choice.
+        for language in preferredLanguages {
+            guard let wanted = AudioLanguageSelection.primaryLanguage(language) else { continue }
+            let matches = audio.filter { AudioLanguageSelection.primaryLanguage($0.Language) == wanted }
+            if let best = matches.max(by: { ($0.Channels ?? 0) < ($1.Channels ?? 0) }) { return best.Index }
         }
         return audio.first(where: { $0.IsDefault == true })?.Index ?? audio.first?.Index
     }
@@ -272,7 +265,8 @@ enum JellyfinPlaybackResolver {
         serverURL: String,
         apiKey: String,
         itemId: String,
-        mediaSourceId: String?
+        mediaSourceId: String?,
+        preferredLanguages: [String] = AudioLanguageSelection.preferredLanguages()
     ) -> PlaybackResolution? {
         let sources = info.MediaSources ?? []
         let source = sources.first(where: { $0.Id == mediaSourceId }) ?? sources.first
@@ -284,7 +278,7 @@ enum JellyfinPlaybackResolver {
         if let relative = source?.TranscodingUrl, !relative.isEmpty {
             if let url = makeURL(serverURL: serverURL, relativeOrAbsolute: relative, apiKey: apiKey) {
                 let pinned = pinningAudioStream(
-                    url, index: preferredAudioIndex(in: source?.MediaStreams)
+                    url, index: preferredAudioIndex(in: source?.MediaStreams, preferredLanguages: preferredLanguages)
                 )
                 return PlaybackResolution(url: pinned, playSessionId: info.PlaySessionId, isDirectPlay: false)
             }

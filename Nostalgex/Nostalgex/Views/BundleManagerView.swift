@@ -30,26 +30,32 @@ struct SettingsPageView: View {
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 48) {
 
-                        VStack(alignment: .leading, spacing: 20) {
-                            sectionHeader("SUPPORT NOSTALGEX", subtitle: "Star ratings help other households find Nostalgex")
+                        if let productPage = AppStoreLink.productPage {
+                            VStack(alignment: .leading, spacing: 20) {
+                                sectionHeader("SUPPORT COUCHWAVE", subtitle: "Star ratings help other households find CouchWave")
 
-                            SettingsToggleRow(
-                                title: "RATE NOSTALGEX",
-                                subtitle: "Opens the App Store on your Apple TV",
-                                isOn: true,
-                                isFocused: focusedItem == "rate",
-                                showToggle: false
-                            ) {
-                                Analytics.track(.rateTapped)
-                                openURL(AppStoreLink.productPage)
+                                SettingsToggleRow(
+                                    title: "RATE COUCHWAVE",
+                                    subtitle: "Opens the App Store on your Apple TV",
+                                    isOn: true,
+                                    isFocused: focusedItem == "rate",
+                                    showToggle: false
+                                ) {
+                                    Analytics.track(.rateTapped)
+                                    openURL(productPage)
+                                }
+                                .focused($focusedItem, equals: "rate")
+                                .id("rate")
+                                .accessibilityHint("Opens CouchWave in the App Store to leave a star rating")
+
                             }
-                            .focused($focusedItem, equals: "rate")
-                            .id("rate")
-                            .accessibilityHint("Opens Nostalgex in the App Store to leave a star rating")
 
+                            settingsDivider
                         }
 
-                        settingsDivider
+                        Text("CouchWave is based on Nostalgex by Chad Mueller. Licensed under MIT.")
+                            .font(.system(size: 18))
+                            .foregroundStyle(.secondary)
 
                         // Connection
                         connectionSection
@@ -566,8 +572,10 @@ struct SettingsPageView: View {
             // stays in the app; on, it counts on the server they connected.
             if !appState.isDemoMode {
                 SettingsToggleRow(
-                    title: "REPORT PLAYBACK TO \(appState.backendDisplayName.uppercased())",
-                    subtitle: "Off by default. When on, a real watch here counts on your server.",
+                    title: "\(appState.backendDisplayName.uppercased()) HISTORY & RESUME SYNC",
+                    subtitle: appState.backendKind == .plex
+                        ? "Off by default. Also reports active sessions; can change watch history and resume points."
+                        : "Off by default. Reports activity, watch counts and resume points.",
                     // Warning stays full-brightness while the row's own text dims,
                     // so the side effect is legible exactly when it applies.
                     warning: appState.syncPlexActivity
@@ -581,6 +589,21 @@ struct SettingsPageView: View {
                 .focused($focusedItem, equals: "plex_sync")
                 .id("plex_sync")
                 .accessibilityHint("Updates play counts, resume points and Continue Watching in \(appState.backendDisplayName)")
+                if appState.backendKind == .plex {
+                    SettingsToggleRow(
+                        title: "PLEX HEARTBEAT ONLY",
+                        subtitle: "Reports the current title and playback state without position, duration or watched marks. Server history effects are being tested.",
+                        warning: appState.plexHeartbeatOnly ? "No time limit. Verification stops reporting if watch state changes." : nil,
+                        isOn: appState.plexHeartbeatOnly,
+                        isFocused: focusedItem == "plex_heartbeat"
+                    ) { appState.plexHeartbeatOnly.toggle() }
+                    .focused($focusedItem, equals: "plex_heartbeat")
+                    .id("plex_heartbeat")
+                    .accessibilityHint("Plex heartbeat; does not enable history and resume sync")
+                    if let reason = appState.heartbeatTestNotice {
+                        Text(reason).font(.system(size: 16)).foregroundStyle(.orange)
+                    }
+                }
             }
 
             SettingsToggleRow(

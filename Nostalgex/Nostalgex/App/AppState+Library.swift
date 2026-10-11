@@ -50,17 +50,17 @@ extension AppState {
         let musicVideos = allItems.filter { ($0.librarySource ?? .movie) == .musicVideo }
         guard !musicVideos.isEmpty else { return }
 
-        Task { [weak self] in
+        let session = librarySessionGeneration
+        musicEnrichmentTask?.cancel()
+        musicEnrichmentTask = Task { [weak self] in
             guard let self else { return }
             print("[MusicEnrichment] Background pass for \(musicVideos.count) music videos (High Rotation bundle on)")
             await self.musicEnrichmentService.enrichMusicVideos(self.allItems)
             await MainActor.run {
+                guard !Task.isCancelled, self.librarySessionGeneration == session else { return }
                 self.allItems = self.musicEnrichmentService.itemsWithDisplayMetadata(self.allItems)
                 self.allChannels = self.musicEnrichmentService.refreshChannelPools(self.allChannels, from: self.allItems)
                 self.applyBundleFilter()
-                if let current = self.currentChannel {
-                    self.selectChannel(current)
-                }
                 self.saveLibrarySnapshotIfNeeded()
             }
         }
@@ -104,6 +104,7 @@ extension AppState {
             }
         }
 
+        guard hasCredentials, !Task.isCancelled else { return }
         let isBackground = background && !channels.isEmpty
 
         // The sign-in this load is for. Taken after server recovery, which may itself
@@ -173,6 +174,7 @@ extension AppState {
         // Load channel + bundle config: try server first, fall back to bundled
         await pulseLibraryPhase(.preparing, detail: "Loading channel rules")
         let config = await loadChannelConfig()
+        if superseded() || Task.isCancelled { return }
 
         // Store bundles, applying persisted enabled/disabled state
         bundles = config.bundles.map { def in
@@ -205,6 +207,7 @@ extension AppState {
             // from whatever was fetched, and the library is marked stale so a later
             // refresh fills in the rest.
             var scanWasAbandoned = false
+            var serverFailed = false
 
             for (serverIndex, scanAPI) in apisToScan.enumerated() {
                 let serverLabel = serverIndex < serverNames.count ? serverNames[serverIndex] : "Plex"
@@ -232,7 +235,7 @@ extension AppState {
                         operation: {
                             try await scanAPI.loadLibrary { [weak self] event in
                                 Task { @MainActor [weak self] in
-                                    guard let self else { return }
+                                    guard let self, self.librarySessionGeneration == session else { return }
                                     self.scanSectionIndex = event.sectionIndex
                                     self.scanTotalSections = event.totalSections
                                     self.scanItemsFound = baseCount + event.itemsLoadedSoFar
@@ -277,6 +280,7 @@ extension AppState {
                     scanWasAbandoned = true
                     lastError = stalled
                 } catch {
+                    serverFailed = true
                     print("[Plex90] LOAD: server '\(serverLabel)' failed: \(error)")
                     lastError = error
                 }
@@ -307,13 +311,14 @@ extension AppState {
             // applied. Its partial item list is a subset of what the user is already
             // watching, so adopting it would shrink a working guide mid-program. Marking
             // the library stale leaves the existing daily-refresh loop to try again.
-            if isBackground, scanWasAbandoned {
+            if isBackground, scanWasAbandoned || serverFailed {
                 print("[Plex90] LOAD: background refresh abandoned mid-scan, keeping the loaded lineup")
                 isBackgroundRefreshing = false
                 isLibraryStale = true
                 return
             }
 
+            scanWasAbandoned = scanWasAbandoned || serverFailed
             merged = Self.dedupingItems(merged, servers: selectedServers)
             // Belt and braces under the generation check: an item stamped with a server
             // that is not signed in can never be played, so it never enters a pool.
@@ -573,6 +578,7 @@ extension AppState {
             return false
         }
         applyLibrarySnapshot(loaded.snapshot)
+        refreshTopShelfSnapshot()
         isLibraryStale = loaded.isStale
         InstallDiagnostics.note("snapshot: restored, stale=\(loaded.isStale)")
         return true

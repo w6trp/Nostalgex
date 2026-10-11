@@ -7,6 +7,10 @@ import Foundation
 /// Uses a custom `init(from:)` decoder so that null/missing array fields default to `[]`
 /// instead of crashing the entire decode batch.
 struct MediaEnrichment: Codable, Sendable {
+    var cacheKey: String { Self.cacheKey(mediaType: mediaType, tmdbID: tmdbID) }
+
+    static func cacheKey(mediaType: String, tmdbID: String) -> String { "\(mediaType):\(tmdbID)" }
+
     // Primary identifiers
     let tmdbID: String
     let imdbID: String?

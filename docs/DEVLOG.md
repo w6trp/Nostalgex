@@ -3,6 +3,188 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-10-11 (audio preference correction and sustained heartbeat evidence)
+
+**Shipped.** Build 52 completed the owner-led sustained heartbeat, manual-disable and reactivation/Home tests. Build 53 is signed and installed after the owner confirmed Home. It was left closed; installed version was read back successfully. Upstream PRs [#19](https://github.com/chadMueller/Nostalgex/pull/19), [#20](https://github.com/chadMueller/Nostalgex/pull/20), and [#21](https://github.com/chadMueller/Nostalgex/pull/21) separately cover diagnostic redaction, server-qualified music identity, and selected versions/multipart offsets. None was merged; heartbeat PR #18 remains draft.
+
+**Changed.** A production-code probe reproduced French, Spanish and Dutch preferences selecting English. Canonical language matching now handles two-/three-letter tags and regional variants, respects preference order, and passes the app's explicit language setting into Jellyfin/Emby HLS selection. Local AVFoundation audio matching uses the same normalization and retains the existing default when no preferred track is available. Multipart episodes now keep the complete part stack, as movies already did. Diagnostic redaction also covers quoted JSON credential keys.
+
+**Validation.** The audio probe selected the wrong track in all three fixtures before the fix and the intended track in all three afterward. Full fork suite: 501 passed, 2 optional live harnesses skipped, zero failures. Upstream isolated suites: 437/441/440 passed respectively, with 2 skipped each. Build 52 kept the main title reporting for 11 minutes 48 seconds; 83 acknowledged reports and 484 unchanged state/history comparisons across three titles ended with an empty sampled-client session list after manual disable. Reactivation/Home added five acknowledged reports, 12 unchanged comparisons and a final empty session list.
+
+**Half-done.** Audio tests verify selection and request construction, not audible output or decoder compatibility on hardware. Delayed Plex persistence, completion, force-quit and network-loss cases remain open. No additional audio upstream PR was opened. See `PLAYBACK-REVIEW.md` for the concrete inventory and limits.
+
+**Next.** Exercise multilingual and multi-part sources on hardware during normal viewing, then decide whether to port audio selection as another focused upstream PR. No device playback was interrupted for code work.
+
+## 2026-10-11 (unlimited heartbeat integration)
+
+**Shipped.** CouchWave 1.0.25 (52) is signed, installed and running on the paired tvOS device after the owner confirmed it was idle. The owner has started the sustained playback test.
+
+**Changed.** Reused the upstream draft PR's ordered server queue and narrow position-free request implementation. Removed the ten-minute cutoff and twelve-title ceiling. Channel changes enqueue the outgoing stop before the incoming heartbeat. Disable waits for the in-flight request and closes its exact session; reactivation uses a fresh identity. Background time also covers disable cleanup. Existing CouchWave playback fixes, branding, history defaults and guarded read-only comparisons remain in place. No history is reset.
+
+**Validation.** 495 native tests passed, 2 optional live harnesses skipped. New coverage exercises the upstream queue, request-field omission, reactivation, released-owner cleanup and continued reporting beyond the former time/title limits. Signed device compilation and strict codesign verification succeeded. Installed version was read back as build 52.
+
+**Half-done.** Sustained hardware playback beyond eleven minutes, manual disable/re-enable and delayed stored-state checks remain pending. The upstream PR stays draft; this fork adds verification around the shared implementation and is not the exact upstream branch.
+
+**Next.** Collect the longer live audit, including disable and Home-screen cleanup. Keep personal signing configuration and audit data out of Git.
+
+## 2026-10-11 (experimental cutoff and disable cleanup)
+
+**Shipped.** CouchWave 1.0.25 (51) is signed and installed after the owner confirmed the TV was idle. It was not launched over an active viewing test.
+
+**Changed.** Expiry and manual disable now close only the exact sessions successfully opened by the experiment, using stopped reports without position or duration. Cleanup waits for in-flight acknowledgements, checks unchanged stored state before and after each write, and refuses writes after mutation or incomplete verification. Rapid reactivation waits for old cleanup. The ten-minute experiment limit remains; a separate upstream feature branch is being prepared without that limit.
+
+**Validation.** Full native suite passed 484 tests with 2 optional live harnesses skipped. Ten new regressions cover timer/request cutoff, manual disable, channel changes, background/foreground transitions, in-flight requests, rapid reactivation, and failed/mutated verification. Signed build and strict codesign verification passed.
+
+**Half-done.** Physical-device cutoff/manual-disable verification is pending. The earlier short live observations do not establish long-run behavior. Cleanup is deliberately unconfirmed when network, storage, or state verification fails; no history is reset.
+
+**Next.** For this bounded beta, watch eight minutes, switch twice before minute ten, continue past eleven minutes and verify reporting switches off while playback continues. The separately requested production upstream PR must have no experimental cutoff and must clearly disclose pending sustained hardware validation.
+
+## 2026-10-11 (normal-exit stop reporting)
+
+**Shipped.** CouchWave 1.0.25 (50) is signed, installed and running on the paired tvOS device.
+
+**Changed.** Normal app backgrounding now requests a bounded UIKit background task until the outgoing tracker's queued reporting and guarded observations finish, or the OS expires the budget. Build 49 fixed channel changes, but a Home-screen exit suspended the app midway through pre-stop verification. No unbounded background playback or reporting is enabled.
+
+**Validation.** The full native suite passed 474 tests with 2 optional live harnesses skipped. Signed build and strict codesign verification passed. Build 49 had five acknowledged channel-change stops and 150 unchanged stored-state comparisons across six titles, including an existing resume position. Build 50 then captured 15 acknowledged reports and 72 unchanged comparisons across two titles over 105 seconds. The final Home-screen exit produced an acknowledged stopped report, unchanged post-write state, and an empty sampled-client session list. An existing resume offset stayed intact.
+
+**Half-done.** The OS may deny or expire background time, and force-quit/network-loss cases are not verified. The heartbeat experiment remains bounded to ten minutes and is not a general no-history guarantee.
+
+**Next.** Keep the ten-minute experimental limit while extending coverage to long playback, completion, network loss and forced termination. The audit evidence remains local and is not committed.
+
+## 2026-10-11 (channel-change stop reporting)
+
+**Shipped.** CouchWave 1.0.25 (49) is signed, installed and running on the paired tvOS device with the approved bounded heartbeat experiment.
+
+**Changed.** A queued reporting task now keeps the outgoing tracker alive until its queue drains. Previously a channel change released the tracker before the task began, dropping the final stopped report and leaving stale Plex playing sessions. The temporary reference ends after the queue drains.
+
+**Validation.** A harness running production tracker code reported only playing before the fix, and playing followed by stopped after it; the tracker was released in both cases. The full native suite passed 474 tests with 2 optional live harnesses skipped, including the new lifetime regression. The focused simulator reproduction runner stalled and was stopped; the portable reproduction and subsequent full suite completed. Signed build and strict codesign verification passed. Initial live build-49 observations show stopped acknowledgements for outgoing channels and only the current sampled item playing, with stored state still unchanged.
+
+**Half-done.** Final exit-to-Home and post-stop observation are pending. The app's live-TV Play/Pause command shows its overlay; returning to the guide retains preview playback. Neither action should be described as a pause or stop test. Existing stale entries from earlier builds are outside the new tracker lifetime.
+
+**Next.** Collect the final device audit, including outgoing stopped reports and stored-state comparisons. Do not treat a bounded test as a general no-history guarantee.
+
+## 2026-10-11 (heartbeat audit storage correction)
+
+**Shipped.** CouchWave 1.0.25 (48) is signed, installed and running on the paired tvOS device. The previous build's Documents audit could not be retrieved even with the setting enabled and playback active.
+
+**Changed.** The audit now uses the tvOS cache directory. Audit-write failure prevents further heartbeat requests instead of being silently ignored. No server history is reset, and the existing ten-minute observation limit remains.
+
+**Validation.** Native suite passed 473 tests with 2 optional live harnesses skipped. New tests verify cache readback and zero heartbeat writes when audit storage fails. Signed build and strict codesign verification passed. The physical-device cache audit is retrievable: Plex acknowledges position-free heartbeats and its session endpoint reports the app's item as playing. Initial stored watch count, resume field, last-viewed timestamp and history digest comparisons are unchanged.
+
+**Half-done.** The bounded build-48 run captured five titles, 20 acknowledged heartbeats and 158 unchanged stored-state comparisons over 135 seconds. It also exposed stale playing sessions: the outgoing tracker was released before its queued stop report began. The live UI does not pause, and the guide retains preview playback, so those interactions do not verify pause/stop. These observations do not establish a general history-free guarantee or validate the previous build's uncollected period.
+
+**Next.** Collect the final bounded audit and document any changed fields. Keep reporting off if verification fails or persisted state changes.
+
+## 2026-10-11 (approved heartbeat beta)
+
+**Shipped.** CouchWave 1.0.25 (47) is signed, installed and launched on the paired tvOS 27 device. The owner explicitly approved a heartbeat-only experiment with the existing Plex profile, superseding the earlier isolation requirement. The launch requests heartbeat mode only; observed server effects are still pending.
+
+**Changed.** Added a separate Plex-only experimental setting that disables history/resume sync, omits timeline position and duration, and never calls watched/scrobble reporting. The existing profile token is used inside the app without extracting it. The experiment snapshots stored item fields and history before a report, compares all sampled items during and after playback, checks current sessions, and stops reporting on mutation or failed verification. It is bounded to ten minutes and twelve titles. A changed server/profile stops the experiment. Read-only history fingerprints conservatively cover every visible history row for each sampled item, so another user's play of that same item may also stop the test. Sanitized observations stay in the app Documents directory, outside source control.
+
+**Validation.** Native suite passed 471 tests with 2 optional live harnesses skipped. Tests exercise field omission in the actual request builder, no scrobble after completion, mutually exclusive policies, failed-baseline refusal and automatic shutdown after mutation. Signed build and strict codesign verification passed; build 47 installation and launch were verified.
+
+**Half-done.** Owner-driven playback and audit collection remain in progress. This is not a no-history guarantee. No history is deleted, restored or reset; no new Plex profile, token or permission was created.
+
+**Next.** Collect the bounded test's audit and compare live visibility with persisted state; keep heartbeat off if any mutation or verification failure is detected.
+
+## 2026-10-11 (Plex activity verification preparation)
+
+**Shipped.** No replacement app installed and no reporting preference changed. The physical device remains on CouchWave 1.0.25 (46), source `f508c21` with local signing configuration.
+
+**Changed.** Confirmed upstream main still points to `c2f32e6`. The installed source adds four commits over that base. Documented the current history-writing flag semantics and reviewed the official Plex timeline/status API. Prepared a scoped read-only observer and isolated test protocol, including before/during/after metadata, session and history comparisons. Corrected older documentation that still described device signing as unverified.
+
+**Validation.** Seven synthetic observer tests pass. Installed source CI also passed channel engine, web and native tests. No server credentials were accessed, no test account was created, and no live timeline/scrobble or history experiment ran.
+
+**Half-done.** Plex documentation provides no verified history-suppression parameter. Bunny Ears TV's developer-published settings screenshot confirms a position-free Heartbeat Only mode, providing a concrete test lead. Its private implementation and persisted-state effects remain unknown. A disposable test profile, sample items and authorized observation access have not been established. The prepared tool cannot prove behavior without that isolated experiment.
+
+**Next.** Obtain exact authorization for existing disposable profile/sample data, or separately for creation of a named limited-access test profile. Run the reporting-off control first. Keep the real-account history switch off.
+
+## 2026-10-11 (CouchWave artwork and device installation)
+
+**Shipped.** CouchWave 1.0.25 (46) was signed, installed and launched on a paired physical Apple TV 4K (2nd generation) running tvOS 27.0. Both app and Top Shelf provision with the same App Group using development signing. No App Store, TestFlight or website deployment occurred.
+
+**Changed.** Original couch-surfing artwork replaces the provisional beta graphics in the icon, Top Shelf, native headers and browser tuner. Browser sign-in and server-client names use CouchWave. Displayed channel names use CouchWave while their stable IDs remain unchanged. Browser links no longer imply that upstream's App Store app or donation accounts belong to this fork. Asset originals, generation prompts and the size-export script are checked in. Upstream MIT credit remains visible.
+
+**Validation.** Xcode 27 signed build succeeded, strict recursive codesign verification passed, device installation and process launch succeeded. JavaScript checks and the production web build passed. Earlier native simulator validation passed 464 tests with 2 opt-in live-server tests skipped. No live media-server state was tested or changed.
+
+**Half-done.** Changes remain on `codex/reliability-and-plex-privacy`. Remote navigation, actual playback and live Top Shelf behavior require owner hardware acceptance. Personal development profiles expire after seven days and require a fresh signed install. Local owner-specific Xcode signing selections are intentionally not committed. Historical upstream marketing pages are not a CouchWave release site.
+
+**Next.** Test sign-in, channel surfing and remote focus on the device with history/resume reporting off. No verified Plex activity-only reporting path is enabled. Keep upstream history and legal credit when extending the branding to a future public website.
+
+## 2026-10-11 (CouchWave beta identity)
+
+**Shipped.** No signed build, TestFlight upload or website deployment. Changes remain on `codex/reliability-and-plex-privacy` for the personal fork.
+
+**Changed.** The native beta is named CouchWave, with its own bundle IDs, App Group, keychain service, URL scheme and media-server client identity. A code-rendered wordmark and beta artwork replace upstream branding in the Apple TV interface. Upstream rating links are hidden until the fork has its own App Store record. Upstream signing team and export profiles are replaced with explicit owner setup requirements. MIT license and attribution remain, including a visible attribution in settings. Internal project/module names and the historical website remain unchanged for upstream compatibility.
+
+**Validation.** Local Xcode 27.0 compiled the unsigned physical-tvOS target. The tvOS 27 simulator suite passed 464 tests; 2 opt-in live-server tests were skipped, with no failures. Built bundle IDs and the CouchWave display name/URL scheme were inspected. No live server state was tested or changed.
+
+**Half-done.** Apple signing and physical-device pairing/installation remain unverified. Beta artwork is provisional. The website and browser tuner retain their upstream identity pending a separate web release.
+
+**Next.** Select the owner's signing team and verify provisioning for both app and Top Shelf. Pair the intended Apple TV, install the approved development build, and perform hardware acceptance with history/resume reporting left off.
+
+## 2026-10-11 (fork reliability branch)
+
+**Shipped.** Source changes prepared on `codex/reliability-and-plex-privacy` for
+review in the personal fork. No signed app, TestFlight upload or website deployment.
+Upstream main, license and attribution are preserved.
+
+**Changed.** Playback attempts now own their watchdog/cancellation work and guard
+callbacks by current player item, so superseded recovery cannot take over a new
+tune. Selected versions, multipart indices and exact source durations survive
+conversion and enrichment; parts share one tracker. Audio selection returns after
+recovery and capped fallback never increases the selected quality. Scheduled block
+deadlines retune against the authoritative guide. Diagnostic credentials are
+redacted before storage/logging, and old diagnostic rows are discarded.
+
+Reporting now uses actual playback state/position with ordered, acknowledged
+writes. A new explicit history/resume opt-in defaults off rather than inheriting
+the old ambiguous activity preference. Plex timeline uses POST and watched marking
+uses PUT with the rating key. No verified session-only mode is enabled: timeline
+updates may still change history/resume state. Unknown multipart totals are not
+reported as if an individual disc were the whole film.
+
+Server-qualified identities prevent collisions in pools, caches and browser
+schedules. Incomplete background refreshes preserve the working lineup. Calendar
+boundaries cover 23/25-hour days and partial blocks retain their source offsets.
+Canceled auth/enrichment cannot commit stale state. Top Shelf uses the item's own
+server, keeps token URLs out of shared snapshots, handles channel links and clears
+on sign-out. Movie/TV enrichment keys are distinct; remote cache v2 requires an
+explicit fork-owned table. Upstream telemetry identifiers are removed.
+
+Browser fixes cover failed-item rescheduling, stale async callbacks, codec-aware
+source selection, credential-free library caches and exit cleanup. Developer tools
+retain TLS checks, bind loopback by default and require explicit authenticated LAN
+access. They reuse the shared scheduling engine. Newsletter segment failures are
+surfaced. Apple release scripts require owner configuration and explicit upload.
+The CI simulator toolchain is pinned; fork testing/signing instructions and a
+remaining-concerns matrix are in `docs/FORK-TESTING.md` and `docs/FIX-STATUS.md`.
+
+**Verified locally.** JavaScript suite including 26 reliability regressions and
+Vite production build pass. Isolated native production-source checks pass: 27
+playback/source/quality checks, 9 diagnostic checks, 13 reporting scenarios and 24
+core scheduling/metadata/Top Shelf store assertions. Swift parsing, plist lint and
+diff checks pass. Native probes use synthetic data and shims; they do not validate
+AVPlayer, SwiftUI or Apple extension execution.
+
+**Verified in CI.** [Run 38155433349](https://github.com/w6trp/Nostalgex/actions/runs/38155433349) passed on source commit
+`3cf55f1072c4ddf6e1e711b0507d0990411f1143`: Xcode 26.6 compiled the app and
+ran NostalgexTests on the Apple TV simulator, with 464 passed and 2 opt-in live
+harnesses skipped. Web tests and production build passed too. Standard public
+GitHub-hosted runners were used; no paid runner or artifact upload was configured.
+
+**Half-done.** Full local tests cannot start because only Command Line Tools are
+installed. Native hardware/server behavior is unverified.
+Time-restriction programming semantics and the credential recovery mirror remain
+unchanged pending a deliberate policy and durable-storage design. Advanced server
+track selection and complete device codec capabilities are not claimed solved.
+
+**Next.** Install the matching local Xcode/tvOS components, configure fork-owned
+signing identifiers, then pair and test an Apple
+TV. The owner must complete Apple account/agreements and choose the new product
+identity. History-free active-session reporting needs an explicitly authorized
+isolated server experiment before it can be enabled.
+
 ## 2026-10-09 (app)
 
 **Shipped.** Nothing to Apple. 1.0.24 (45) is still in TestFlight beta review.

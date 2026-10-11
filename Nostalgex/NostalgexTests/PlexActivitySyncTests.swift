@@ -4,6 +4,31 @@ import XCTest
 @MainActor
 final class PlexActivitySyncTests: XCTestCase {
 
+    func testHeartbeatAndHistoryAreMutuallyExclusive() {
+        let defaults = UserDefaults.standard
+        let keys = [AppState.syncPlexActivityDefaultsKey, AppState.plexHeartbeatOnlyDefaultsKey]
+        let saved = keys.map { defaults.object(forKey: $0) }
+        defer {
+            for (key, value) in zip(keys, saved) {
+                if let value { defaults.set(value, forKey: key) }
+                else { defaults.removeObject(forKey: key) }
+            }
+        }
+        keys.forEach { defaults.removeObject(forKey: $0) }
+        let state = AppState()
+        XCTAssertFalse(state.plexHeartbeatOnly)
+        state.syncPlexActivity = true
+        state.plexHeartbeatOnly = true
+        XCTAssertFalse(state.syncPlexActivity)
+        XCTAssertTrue(state.heartbeatReportingActive)
+        state.syncPlexActivity = true
+        XCTAssertFalse(state.plexHeartbeatOnly)
+        state.plexHeartbeatOnly = true
+        state.backendKind = .jellyfin
+        XCTAssertFalse(state.heartbeatReportingActive)
+        XCTAssertFalse(state.syncPlexActivity)
+    }
+
     // Never-touched installs must land on OFF: channel surfing otherwise floods the
     // household's Plex "Continue Watching" row with programs nobody chose to start.
     func testResolveSyncPlexActivity_defaultsOffWhenNothingStored() {
@@ -20,6 +45,25 @@ final class PlexActivitySyncTests: XCTestCase {
     // UserDefaults hands back NSNumber; a non-Bool value must not read as ON.
     func testResolveSyncPlexActivity_ignoresNonBooleanStoredValue() {
         XCTAssertFalse(AppState.resolveSyncPlexActivity(stored: "yes"))
+    }
+
+    func testLegacySyncDoesNotOptIntoNewHistoryPolicy() {
+        let defaults = UserDefaults.standard
+        let currentKey = AppState.syncPlexActivityDefaultsKey
+        let legacyKey = AppState.legacySyncPlexActivityDefaultsKey
+        let current = defaults.object(forKey: currentKey)
+        let legacy = defaults.object(forKey: legacyKey)
+        defer {
+            if let current { defaults.set(current, forKey: currentKey) }
+            else { defaults.removeObject(forKey: currentKey) }
+            if let legacy { defaults.set(legacy, forKey: legacyKey) }
+            else { defaults.removeObject(forKey: legacyKey) }
+        }
+        defaults.removeObject(forKey: currentKey)
+        defaults.set(true, forKey: legacyKey)
+        let state = AppState()
+        XCTAssertFalse(state.syncPlexActivity)
+        XCTAssertEqual(defaults.object(forKey: legacyKey) as? Bool, true)
     }
 
     func testSyncPlexActivityToggle_persistsToUserDefaults() {

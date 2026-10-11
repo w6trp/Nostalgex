@@ -10,6 +10,8 @@ struct ScheduleEntry: Identifiable {
     let isNowPlaying: Bool
     /// True if this item is also playing on another channel right now
     var isConflict: Bool = false
+    /// Position in the media at this block's start (wraparound can begin mid-item).
+    var sourceOffsetSeconds: Int = 0
 
     var durationSeconds: TimeInterval {
         endTime.timeIntervalSince(startTime)
@@ -40,7 +42,7 @@ struct ChannelSchedule {
     func livePlayback(at now: Date = Date()) -> (elapsedSeconds: Int, progress: Double, totalSeconds: Int)? {
         guard let np = nowPlaying else { return nil }
         let totalSeconds = max(1, np.item.duration * 60)
-        let elapsed = max(0, min(totalSeconds, Int(now.timeIntervalSince(np.startTime))))
+        let elapsed = max(0, min(totalSeconds, np.sourceOffsetSeconds + Int(now.timeIntervalSince(np.startTime))))
         let blockDuration = np.durationSeconds
         let progress = blockDuration > 0
             ? min(1, now.timeIntervalSince(np.startTime) / blockDuration)
@@ -87,7 +89,8 @@ enum ChannelScheduleBuilder {
                 item: block.item,
                 startTime: block.startTime,
                 endTime: block.endTime,
-                isNowPlaying: isNow
+                isNowPlaying: isNow,
+                sourceOffsetSeconds: block.sourceOffsetSeconds
             )
             entries.append(entry)
             if isNow { nowPlayingEntry = entry }
@@ -108,7 +111,7 @@ enum ChannelScheduleBuilder {
             let elapsed = now.timeIntervalSince(np.startTime)
             let dur = np.durationSeconds
             progress = dur > 0 ? elapsed / dur : 0
-            elapsedSeconds = max(0, Int(elapsed))
+            elapsedSeconds = max(0, np.sourceOffsetSeconds + Int(elapsed))
         } else {
             progress = 0
             elapsedSeconds = 0
@@ -142,72 +145,30 @@ enum ChannelScheduleBuilder {
                 item: block.item,
                 startTime: block.startTime,
                 endTime: block.endTime,
-                isNowPlaying: false
+                isNowPlaying: false,
+                sourceOffsetSeconds: block.sourceOffsetSeconds
             )
         }
     }
 
-    /// Detect and resolve cross-channel conflicts where the same item plays
-    /// on multiple channels simultaneously. Lower channel IDs win; the higher
-    /// channel's nowPlaying is bumped to its upNext.
+    /// Annotate simultaneous repeats without inventing a different "now". The
+    /// persisted manifest remains authoritative for both the guide and the player.
     static func resolveConflicts(_ schedules: inout [Int: ChannelSchedule]) {
-        var nowPlayingByItem: [String: [(channelID: Int, schedule: ChannelSchedule)]] = [:]
+        var channelsByItem: [String: [Int]] = [:]
         for (channelID, schedule) in schedules {
-            guard let np = schedule.nowPlaying else { continue }
-            nowPlayingByItem[np.item.ratingKey, default: []].append((channelID, schedule))
+            guard let current = schedule.nowPlaying else { continue }
+            channelsByItem[current.item.id, default: []].append(channelID)
         }
-
-        for (_, group) in nowPlayingByItem where group.count > 1 {
-            let sorted = group.sorted { $0.channelID < $1.channelID }
-            let winner = sorted[0]
-            let losers = sorted.dropFirst()
-
-            for loser in losers {
-                var schedule = loser.schedule
-                let oldTitle = schedule.nowPlaying?.item.title ?? "?"
-
-                for i in schedule.entries.indices {
-                    if schedule.entries[i].isNowPlaying {
-                        schedule.entries[i] = ScheduleEntry(
-                            id: schedule.entries[i].id,
-                            item: schedule.entries[i].item,
-                            startTime: schedule.entries[i].startTime,
-                            endTime: schedule.entries[i].endTime,
-                            isNowPlaying: false,
-                            isConflict: true
-                        )
-                        break
-                    }
+        for channelIDs in channelsByItem.values where channelIDs.count > 1 {
+            for channelID in channelIDs.sorted().dropFirst() {
+                guard var schedule = schedules[channelID], var current = schedule.nowPlaying else { continue }
+                current.isConflict = true
+                for index in schedule.entries.indices where schedule.entries[index].id == current.id {
+                    schedule.entries[index].isConflict = true
                 }
-
-                if let upNext = schedule.upNext {
-                    let newNowPlaying = ScheduleEntry(
-                        id: upNext.id,
-                        item: upNext.item,
-                        startTime: upNext.startTime,
-                        endTime: upNext.endTime,
-                        isNowPlaying: true
-                    )
-
-                    let newUpNext: ScheduleEntry? = {
-                        guard let idx = schedule.entries.firstIndex(where: { $0.id == upNext.id }),
-                              idx + 1 < schedule.entries.count else { return nil }
-                        return schedule.entries[idx + 1]
-                    }()
-
-                    schedule = ChannelSchedule(
-                        entries: schedule.entries,
-                        nowPlaying: newNowPlaying,
-                        upNext: newUpNext,
-                        progress: 0,
-                        elapsedSeconds: 0
-                    )
-                    print("[Plex90] CONFLICT: \"\(oldTitle)\" on CH \(loser.channelID) also on CH \(winner.channelID), bumped to \"\(upNext.item.title)\"")
-                } else {
-                    print("[Plex90] CONFLICT: \"\(oldTitle)\" on CH \(loser.channelID) also on CH \(winner.channelID), no upNext available")
-                }
-
-                schedules[loser.channelID] = schedule
+                schedules[channelID] = ChannelSchedule(
+                    entries: schedule.entries, nowPlaying: current, upNext: schedule.upNext,
+                    progress: schedule.progress, elapsedSeconds: schedule.elapsedSeconds)
             }
         }
     }
@@ -222,7 +183,7 @@ enum ChannelScheduleBuilder {
         for channel in channels where channel.id != excludingChannelID {
             guard let schedule = buildSchedule(for: channel, at: now, credentialFingerprint: credentialFingerprint),
                   let np = schedule.nowPlaying else { continue }
-            if np.item.ratingKey == item.ratingKey {
+            if np.item.id == item.id {
                 return channel.id
             }
         }

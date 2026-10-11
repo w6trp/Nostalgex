@@ -68,6 +68,44 @@ final class AudioTrackSelectionTests: XCTestCase {
         XCTAssertNil(JellyfinPlaybackResolver.preferredAudioIndex(in: nil))
     }
 
+    func testExplicitLanguageBeatsEnglishEvenWhenEnglishHasMoreChannels() {
+        for (preferred, tag) in [("fr", "fra"), ("es", "spa"), ("nl", "dut")] {
+            let streams = [stream(1, "Audio", lang: tag, channels: 2),
+                           stream(2, "Audio", lang: "eng", isDefault: true, channels: 6)]
+            XCTAssertEqual(JellyfinPlaybackResolver.preferredAudioIndex(in: streams, preferredLanguages: [preferred]), 1)
+        }
+    }
+
+    func testOrderedLanguagesDoNotBecomeAnUnorderedSet() {
+        let streams = [stream(1, "Audio", lang: "fra", channels: 2), stream(2, "Audio", lang: "eng", channels: 6)]
+        XCTAssertEqual(JellyfinPlaybackResolver.preferredAudioIndex(in: streams, preferredLanguages: ["fr", "en"]), 1)
+        XCTAssertEqual(JellyfinPlaybackResolver.preferredAudioIndex(in: streams, preferredLanguages: ["en", "fr"]), 2)
+    }
+
+    func testLocalAudioUsesCanonicalTagsAndLeavesUnmatchedDefaultAlone() {
+        XCTAssertEqual(AudioLanguageSelection.preferredOptionIndex(tags: ["eng", "spa"], preferredLanguages: ["es-MX"]), 1)
+        XCTAssertEqual(AudioLanguageSelection.preferredOptionIndex(tags: ["eng", "dut"], preferredLanguages: ["nl"]), 1)
+        XCTAssertNil(AudioLanguageSelection.preferredOptionIndex(tags: [nil,"und"], preferredLanguages: ["en"]))
+        XCTAssertNil(AudioLanguageSelection.preferredOptionIndex(tags: [], preferredLanguages: ["en"]))
+    }
+
+    func testSavedLanguageOverridesSystemForServerStreamSelection() throws {
+        let suite = "audio-language-test-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        XCTAssertEqual(AudioLanguageSelection.preferredLanguages(defaults: defaults, systemLanguages: ["en-US"]), ["en-US"])
+        defaults.set("es", forKey: AudioLanguageSelection.defaultsKey)
+        let languages = AudioLanguageSelection.preferredLanguages(defaults: defaults, systemLanguages: ["en-US"])
+        XCTAssertEqual(languages, ["es"])
+        let json = #"{"MediaSources":[{"Id":"source","TranscodingUrl":"/stream.m3u8?AudioStreamIndex=2","MediaStreams":[{"Index":1,"Type":"Audio","Language":"spa","Channels":2},{"Index":2,"Type":"Audio","Language":"eng","IsDefault":true,"Channels":6}]}]}"#
+        let info = try JSONDecoder().decode(JellyfinPlaybackResolver.PlaybackInfoResponse.self, from: Data(json.utf8))
+        let result = try XCTUnwrap(JellyfinPlaybackResolver.resolve(info, serverURL: "https://synthetic.invalid", apiKey: "fixture", itemId: "1", mediaSourceId: "source", preferredLanguages: languages))
+        let query = URLComponents(url: result.url, resolvingAgainstBaseURL: false)?.queryItems
+        XCTAssertEqual(query?.first { $0.name == "AudioStreamIndex" }?.value, "1")
+        defaults.set("__system__", forKey: AudioLanguageSelection.defaultsKey)
+        XCTAssertEqual(AudioLanguageSelection.preferredLanguages(defaults: defaults, systemLanguages: ["fr-CA"]), ["fr-CA"])
+    }
+
     func testPinningReplacesAnyIndexTheServerAlreadyChose() throws {
         let url = URL(string: "http://h:8096/videos/1/master.m3u8?MediaSourceId=m&AudioStreamIndex=1&api_key=k")!
         let pinned = JellyfinPlaybackResolver.pinningAudioStream(url, index: 2)

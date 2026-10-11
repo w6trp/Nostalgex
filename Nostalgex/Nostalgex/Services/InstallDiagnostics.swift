@@ -8,7 +8,7 @@ import os
 /// UserDefaults is not persisting on this device. If both are old, storage held and
 /// the credential itself was removed.
 enum InstallDiagnostics {
-    static let log = Logger(subsystem: "com.muellhaus.nostalgex", category: "auth")
+    static let log = Logger(subsystem: "io.github.w6trp.couchwave", category: "auth")
 
     /// Unified log for Console.app plus stdout for an attached debugger or devicectl --console.
     static func note(_ message: String) {

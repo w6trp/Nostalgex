@@ -135,7 +135,7 @@ enum DemoData {
             type: .movie,
             thumb: nil, art: nil,
             viewCount: 0, addedAt: Int(Date().timeIntervalSince1970),
-            studio: "Nostalgex Demo",
+            studio: "CouchWave Demo",
             tmdbID: nil, imdbID: nil,
             librarySource: .movie
         )
@@ -152,7 +152,7 @@ enum DemoData {
             type: .episode,
             thumb: nil, art: nil,
             viewCount: 0, addedAt: Int(Date().timeIntervalSince1970),
-            studio: "Nostalgex Demo",
+            studio: "CouchWave Demo",
             tmdbID: nil, imdbID: nil,
             librarySource: .tv
         )

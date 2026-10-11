@@ -6,6 +6,7 @@ struct ManifestBlock {
     let item: PlexMediaItem
     let startTime: Date
     let endTime: Date
+    var sourceOffsetSeconds: Int = 0
 
     var durationSeconds: TimeInterval {
         endTime.timeIntervalSince(startTime)
@@ -77,6 +78,7 @@ enum DailyManifestScheduler {
             credentialFingerprint,
             String(channel.id),
             dayKey,
+            calendar.timeZone.identifier,
             String(pool.count),
             pool.first?.id ?? "",
             pool.last?.id ?? ""
@@ -98,7 +100,7 @@ enum DailyManifestScheduler {
 
         let dayNumber = DailyManifestStore.localDayNumber(for: now, calendar: calendar)
         let yesterdayKey = DailyManifestStore.localDayKey(
-            for: dayStart.addingTimeInterval(-86400),
+            for: calendar.date(byAdding: .day, value: -1, to: dayStart) ?? dayStart,
             calendar: calendar
         )
         let yesterdayAired = DailyManifestStore.airedRatingKeys(
@@ -115,6 +117,7 @@ enum DailyManifestScheduler {
         let packed = packDay(
             pool: pool,
             dayStart: dayStart,
+            dayEnd: calendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart,
             dayNumber: dayNumber,
             channelId: channel.id,
             isPremiereChannel: channel.isPremiereChannel,
@@ -126,12 +129,13 @@ enum DailyManifestScheduler {
             StoredManifestBlock(
                 ratingKey: $0.item.id,
                 startUnix: Int($0.startTime.timeIntervalSince1970),
-                endUnix: Int($0.endTime.timeIntervalSince1970)
+                endUnix: Int($0.endTime.timeIntervalSince1970),
+                sourceOffsetSeconds: $0.sourceOffsetSeconds
             )
         }
 
         let file = DailyManifestFile(
-            schemaVersion: 1,
+            schemaVersion: DailyManifestStore.schemaVersion,
             channelId: channel.id,
             dayKey: dayKey,
             credentialFingerprint: credentialFingerprint,
@@ -177,13 +181,13 @@ enum DailyManifestScheduler {
     private static func packDay(
         pool: [PlexMediaItem],
         dayStart: Date,
+        dayEnd: Date,
         dayNumber: Int,
         channelId: Int,
         isPremiereChannel: Bool,
         yesterdayAiredKeys: Set<String>,
         yesterdayLastItemID: String?
     ) -> [ManifestBlock] {
-        let dayEnd = dayStart.addingTimeInterval(86400)
         let totalPoolSec = pool.reduce(0) { $0 + $1.duration * 60 }
         guard totalPoolSec > 0 else { return [] }
 
@@ -227,7 +231,7 @@ enum DailyManifestScheduler {
             guard t < dayEnd else { break }
             let dur = TimeInterval(item.duration * 60)
             guard dur > 0 else { continue }
-            let end = t.addingTimeInterval(dur)
+            let end = min(t.addingTimeInterval(dur), dayEnd)
             blocks.append(ManifestBlock(item: item, startTime: t, endTime: end))
             t = end
         }
@@ -294,7 +298,7 @@ enum DailyManifestScheduler {
                 }
 
                 let end = t.addingTimeInterval(TimeInterval(playSec))
-                blocks.append(ManifestBlock(item: item, startTime: t, endTime: end))
+                blocks.append(ManifestBlock(item: item, startTime: t, endTime: end, sourceOffsetSeconds: offsetInItem))
                 t = end
 
                 if offsetInItem + playSec >= fullDur {
@@ -316,7 +320,8 @@ enum DailyManifestScheduler {
             return ManifestBlock(
                 item: item,
                 startTime: Date(timeIntervalSince1970: Double(row.startUnix)),
-                endTime: Date(timeIntervalSince1970: Double(row.endUnix))
+                endTime: Date(timeIntervalSince1970: Double(row.endUnix)),
+                sourceOffsetSeconds: row.sourceOffsetSeconds
             )
         }
     }

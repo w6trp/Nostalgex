@@ -141,9 +141,7 @@ struct VideoAreaView: View {
 
     private var idleOverlay: some View {
         VStack(spacing: 24) {
-            Image("NostalgexLogo")
-                .resizable()
-                .scaledToFit()
+            CouchWaveWordmark()
                 .frame(maxWidth: 400)
             Text("SELECT A CHANNEL")
                 .font(.custom("DMMono-Medium", size: 28))

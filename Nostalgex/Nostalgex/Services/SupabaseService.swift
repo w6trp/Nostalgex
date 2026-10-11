@@ -3,6 +3,12 @@ import Foundation
 struct SupabaseService {
     let projectURL: String
     let anonKey: String
+    var tableName: String = ""
+
+    private var isConfigured: Bool {
+        !projectURL.isEmpty && !anonKey.isEmpty && !tableName.isEmpty
+            && tableName.range(of: "^[a-z][a-z0-9_]*$", options: .regularExpression) != nil
+    }
 
     private static let session: URLSession = {
         let config = URLSessionConfiguration.default
@@ -29,7 +35,7 @@ struct SupabaseService {
         tmdbIDs: [String],
         onProgress: (@Sendable (Int, Int) -> Void)? = nil
     ) async throws -> [MediaEnrichment] {
-        guard !tmdbIDs.isEmpty else { return [] }
+        guard isConfigured, !tmdbIDs.isEmpty else { return [] }
 
         // PostgREST supports batches via in filter
         // Split into chunks of 500 to avoid URL length limits
@@ -38,7 +44,7 @@ struct SupabaseService {
         for (chunkIndex, chunk) in chunks.enumerated() {
             onProgress?(chunkIndex, chunks.count)
             let ids = chunk.joined(separator: ",")
-            let urlString = "\(restURL)/media_enrichments?tmdb_id=in.(\(ids))&select=*"
+            let urlString = "\(restURL)/\(tableName)?tmdb_id=in.(\(ids))&select=*"
 
             guard let url = URL(string: urlString) else { continue }
             var req = URLRequest(url: url)
@@ -80,9 +86,9 @@ struct SupabaseService {
     // MARK: - Upsert enrichments
 
     func upsertEnrichments(_ enrichments: [MediaEnrichment]) async throws {
-        guard !enrichments.isEmpty else { return }
+        guard isConfigured, !enrichments.isEmpty else { return }
 
-        let urlString = "\(restURL)/media_enrichments"
+        let urlString = "\(restURL)/\(tableName)?on_conflict=media_type,tmdb_id"
         guard let url = URL(string: urlString) else { return }
 
         // Batch in chunks of 200

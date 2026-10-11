@@ -10,7 +10,7 @@ seconds, so that step is left to Xcode rather than risking the project file.
 ## What is already done
 
 - `ContentProvider.swift` — the extension. Reads the snapshot, shows "On Now",
-  deep links to `nostalgex://channel/<id>`. Holds no credentials, makes no
+  deep links to `couchwave://channel/<id>`. Holds no credentials, makes no
   network calls to the user's server, contains no scheduling logic.
 - `Info.plist` — the `com.apple.tv-top-shelf` extension point.
 - `Nostalgex.entitlements` / `TopShelf.entitlements` — App Group membership for
@@ -26,7 +26,7 @@ seconds, so that step is left to Xcode rather than risking the project file.
 ## Remaining manual step
 
 **One:** confirm the App Group is added to *both* targets in Xcode. Project icon
-→ TARGETS → Signing & Capabilities → App Groups → `group.com.muellhaus.nostalgex`.
+→ TARGETS → Signing & Capabilities → App Groups → `group.io.github.w6trp.couchwave`.
 Xcode registers the group and updates provisioning; this cannot be done through
 the App Store Connect API (no `appGroups` endpoint, verified 404).
 

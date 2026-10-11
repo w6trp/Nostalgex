@@ -56,6 +56,7 @@ final class BackendSwitchScheduleTests: XCTestCase {
         let serverID: String
         let items: [PlexMediaItem]
         let gate: Gate?
+        var shouldFail = false
         var authHeaders: [String: String] { ["X-Test": serverID] }
 
         init(serverID: String, items: [PlexMediaItem], gate: Gate? = nil) {
@@ -66,6 +67,7 @@ final class BackendSwitchScheduleTests: XCTestCase {
 
         func testConnection() async throws -> String { serverID }
         func loadLibrary(progress: LoadProgress?) async throws -> [PlexMediaItem] {
+            if shouldFail { throw URLError(.cannotConnectToHost) }
             if let gate { await gate.wait() }
             try Task.checkCancellation()
             return items
@@ -147,6 +149,28 @@ final class BackendSwitchScheduleTests: XCTestCase {
         XCTAssertFalse(state.channels.isEmpty, "the Plex fixture must land in at least one channel")
         XCTAssertTrue(state.allItems.allSatisfy { $0.serverID == Self.plexServerID })
         return state
+    }
+
+    func testBackgroundFailureOfOneServerKeepsEntireWorkingLibrary() async {
+        let a = FakeBackend(serverID: Self.plexServerID, items: plexItems())
+        let b = FakeBackend(serverID: "other-server", items: [movie(ratingKey: "2", title: "Other", serverID: "other-server")])
+        let state = AppState(credentialStore: store)
+        state.completePlexSignIn(token: "fixture", servers: [plexServer,
+            .init(machineIdentifier: "other-server", name: "Other", baseURL: "http://127.0.0.1:9", owned: true)])
+        // Different fixture host avoids deliberate server deduplication.
+        state.setSelectedServers([plexServer,
+            .init(machineIdentifier: "other-server", name: "Other", baseURL: "http://127.0.0.1:10", owned: true)])
+        state.backendOverride = { $0?.machineIdentifier == Self.plexServerID ? a : b }
+        await state.loadLibrary()
+        let beforeIDs = state.allItems.map(\.id)
+        let beforeChannels = state.channels.map(\.id)
+        let beforeLoadTime = state.lastLoadAtUnix
+        b.shouldFail = true
+        await state.loadLibrary(background: true)
+        XCTAssertEqual(state.allItems.map(\.id), beforeIDs)
+        XCTAssertEqual(state.channels.map(\.id), beforeChannels)
+        XCTAssertEqual(state.lastLoadAtUnix, beforeLoadTime)
+        XCTAssertTrue(state.isLibraryStale)
     }
 
     // MARK: - Assertions

@@ -41,6 +41,7 @@ extension AppState {
     /// User-initiated tunes go through `tuneChannelFromUser(_:method:precomputedSchedule:)`,
     /// which fires the signal with the correct method parameter.
     func selectChannel(_ channel: Channel, precomputedSchedule: ChannelSchedule? = nil) {
+        if dailyRefreshTask == nil, hasCredentials, !isDemoMode { startDailyRefresh() }
         let pool = channel.filteredPool()
         print("[Plex90] SELECT CH \(channel.number) \(channel.name) (pool: \(pool.count) items)")
         currentPartIndex = 0
@@ -68,6 +69,9 @@ extension AppState {
             print("[Plex90] No schedule, random pick: \"\(currentItem?.title ?? "nil")\"")
         }
         loadCurrentItem()
+        if TopShelfStore.read().map({ Int(now.timeIntervalSince1970) - $0.generatedUnix >= 3600 }) ?? true {
+            refreshTopShelfSnapshot()
+        }
     }
 
     /// User-initiated channel change. Emits `channel.tuned` with the calling `method`,
@@ -123,30 +127,26 @@ extension AppState {
             return
         }
 
-        let api = apiForServer(selectedServers.first)
         var entries: [TopShelfSnapshot.Entry] = []
 
+        let now = Date()
+        let horizon = now.addingTimeInterval(24 * 3600)
         for channel in channels.prefix(20) {
-            guard let schedule = ChannelScheduleBuilder.buildSchedule(
-                for: channel,
-                credentialFingerprint: scheduleCredentialFingerprint
-            ), let now = schedule.nowPlaying else { continue }
-
-            entries.append(
-                TopShelfSnapshot.Entry(
-                    channelID: channel.id,
-                    channelNumber: channel.number,
+            let programs = ChannelScheduleBuilder.buildScheduleRange(
+                for: channel, from: now, to: horizon,
+                credentialFingerprint: scheduleCredentialFingerprint)
+            for program in programs {
+                entries.append(TopShelfSnapshot.Entry(
+                    channelID: channel.id, channelNumber: channel.number,
                     channelName: channel.name,
-                    title: now.item.isMusicVideo ? now.item.musicDisplayLine : now.item.title,
-                    startUnix: Int(now.startTime.timeIntervalSince1970),
-                    endUnix: Int(now.endTime.timeIntervalSince1970),
-                    imageURL: api.thumbnailURL(for: now.item)?.absoluteString
-                )
-            )
+                    title: program.item.isMusicVideo ? program.item.musicDisplayLine : program.item.title,
+                    startUnix: Int(program.startTime.timeIntervalSince1970),
+                    endUnix: Int(program.endTime.timeIntervalSince1970),
+                    imageURL: api(for: program.item.serverID).thumbnailURL(for: program.item)?.absoluteString))
+            }
         }
-
         guard !entries.isEmpty else {
-            print("[Plex90] TOPSHELF: no channel had a live nowPlaying across \(channels.prefix(20).count) checked — writing nothing")
+            TopShelfStore.clear()
             return
         }
         TopShelfStore.write(

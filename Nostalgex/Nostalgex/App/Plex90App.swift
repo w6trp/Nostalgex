@@ -45,6 +45,16 @@ struct RootView: View {
             PlayerView()
                 .environment(appState)
         }
+        .onOpenURL { url in
+            guard url.scheme?.lowercased() == "couchwave", url.host == "channel",
+                  let id = Int(url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))) else { return }
+            appState.pendingDeepLinkChannelID = id
+            consumePendingChannelLink()
+        }
+        .onChange(of: appState.channels.map(\.id)) { _, _ in
+            appState.refreshTopShelfSnapshot()
+            consumePendingChannelLink()
+        }
         .onChange(of: appState.playbackState) { _, newState in
             // Disable tvOS screensaver/idle timer during active playback.
             // Without this, the Apple TV screensaver fires even while video is running.
@@ -78,6 +88,15 @@ struct RootView: View {
                 appState.startDailyRefresh()
             }
         }
+    }
+
+    private func consumePendingChannelLink() {
+        guard let id = appState.pendingDeepLinkChannelID,
+              let channel = appState.channels.first(where: { $0.id == id }) else { return }
+        appState.pendingDeepLinkChannelID = nil
+        navigationPath = NavigationPath()
+        appState.selectChannel(channel)
+        appState.isFullScreen = true
     }
 
     /// UserDefaults key that flips from missing → `true` on the first launch of an
@@ -146,9 +165,7 @@ struct LoadingView: View {
     /// headline, no empty progress — a short wait should look deliberate.
     private var splashBody: some View {
         VStack(spacing: 26) {
-            Image("NostalgexLogo")
-                .resizable()
-                .scaledToFit()
+            CouchWaveWordmark()
                 .frame(maxWidth: 460)
 
             Text(String(repeating: "\u{25A0}", count: 3))
@@ -164,9 +181,7 @@ struct LoadingView: View {
 
     private var fullLoadBody: some View {
         VStack(spacing: 28) {
-            Image("NostalgexLogo")
-                .resizable()
-                .scaledToFit()
+            CouchWaveWordmark()
                 .frame(maxWidth: 500)
                 .padding(.bottom, 20)
 
@@ -419,16 +434,14 @@ struct ServerPickerView: View {
             HStack(alignment: .center, spacing: 80) {
                 // Left: branding + explanation
                 VStack(alignment: .leading, spacing: 28) {
-                    Image("NostalgexLogo")
-                        .resizable()
-                        .scaledToFit()
+                    CouchWaveWordmark()
                         .frame(maxWidth: 440)
 
                     Text("CHOOSE YOUR LIBRARIES")
                         .font(.custom("DMMono-Medium", size: 40))
                         .foregroundStyle(.white.opacity(0.9))
 
-                    Text("Your account can reach more than one Plex server. Pick which libraries Nostalgex should build channels from. You can change this later in Settings.")
+                    Text("Your account can reach more than one Plex server. Pick which libraries CouchWave should build channels from. You can change this later in Settings.")
                         .font(.custom("DMMono-Regular", size: 22))
                         .foregroundStyle(.white.opacity(0.45))
                         .multilineTextAlignment(.leading)
@@ -546,9 +559,7 @@ struct EmptyChannelsView: View {
         ZStack {
             Color.black.ignoresSafeArea()
             VStack(spacing: 32) {
-                Image("NostalgexLogo")
-                    .resizable()
-                    .scaledToFit()
+                CouchWaveWordmark()
                     .frame(maxWidth: 540)
 
                 if hasError {

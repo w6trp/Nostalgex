@@ -7,6 +7,12 @@ import Foundation
 /// the stream that reported "playing" while nothing ever decoded. A playhead that advances is
 /// the only thing that means frames are reaching the screen.
 enum PlaybackWatchdog {
+    /// The selected upcoming block may start early after natural media end. Its own
+    /// deadline, rather than the currently airing block's deadline, remains authoritative.
+    static func scheduleDeadline(itemID: String, windows: [(itemID: String, end: Date)], now: Date) -> Date? {
+        windows.first { $0.itemID == itemID && $0.end > now }?.end
+    }
+
     /// Fifteen seconds is plenty for a direct play or a remux. A 4K source the server has to
     /// re-encode needs a transcoder spun up, a seek, and a first segment; on a Mac mini that
     /// can take half a minute, and giving up earlier turned slow starts into skipped films.

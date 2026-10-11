@@ -13,6 +13,77 @@ final class PlaybackDecisionTests: XCTestCase {
                       videoBitDepth: bitDepth, doviProfile: dovi, videoWidth: width, videoHeight: height)
     }
 
+    func testScheduleBoundaryUsesQualifiedItemAndUpcomingBlocksOwnDeadline() {
+        let now = Date(timeIntervalSince1970: 100)
+        let windows = [(itemID: "serverA:1", end: Date(timeIntervalSince1970: 120)),
+                       (itemID: "serverB:1", end: Date(timeIntervalSince1970: 180))]
+        XCTAssertEqual(PlaybackWatchdog.scheduleDeadline(itemID: "serverB:1", windows: windows, now: now), Date(timeIntervalSince1970: 180))
+        XCTAssertNil(PlaybackWatchdog.scheduleDeadline(itemID: "serverA:1", windows: windows, now: Date(timeIntervalSince1970: 120)))
+    }
+
+    func testWholeFilmOffsetMapsToPartRelativeClock() {
+        var source = item()
+        source.additionalPartKeys = ["/part2", "/part3"]
+        source.playbackParts = ["/part1", "/part2", "/part3"].map {
+            PlexPartPlaybackInfo(key: $0, container: "mkv", videoCodec: "h264", audioCodec: "aac", bitDepth: 8, doviProfile: nil, durationSeconds: 60)
+        }
+        let position = source.playbackPosition(at: 135)
+        XCTAssertEqual(position.item.partKey, "/part3")
+        XCTAssertEqual(position.item.partIndex, 2)
+        XCTAssertEqual(position.baseSeconds, 120)
+        XCTAssertEqual(position.offsetSeconds, 15)
+    }
+
+    func testPartBoundariesAndMissingDurationDoNotGuessOffsets() {
+        var source = item()
+        source.additionalPartKeys = ["/part2", "/part3"]
+        source.playbackParts = ["/part1", "/part2", "/part3"].map {
+            PlexPartPlaybackInfo(key: $0, container: "mkv", videoCodec: "h264", audioCodec: "aac", bitDepth: 8, doviProfile: nil, durationSeconds: 60)
+        }
+        XCTAssertEqual(source.playbackPosition(at: 60).item.partIndex, 1)
+        XCTAssertEqual(source.playbackPosition(at: 60).offsetSeconds, 0)
+        XCTAssertEqual(source.playbackPosition(at: -20).offsetSeconds, 0)
+        source.playbackParts?[1].durationSeconds = nil
+        let unknown = source.playbackPosition(at: 135)
+        XCTAssertEqual(unknown.item.partKey, source.partKey)
+        XCTAssertEqual(unknown.offsetSeconds, 135)
+        XCTAssertEqual(unknown.baseSeconds, 0)
+    }
+
+    func testSelectedVersionAndPartSurviveTranscodeAndPersistence() throws {
+        var source = item()
+        source.mediaIndex = 2
+        source.doviProfile = 7
+        source.additionalPartKeys = ["/part2", "/part3"]
+        source.playbackParts = [PlexPartPlaybackInfo(key: "/part2", container: "mkv", videoCodec: "h264", audioCodec: "dts", bitDepth: 10, doviProfile: nil)]
+        let second = source.withPartKey("/part2")
+        XCTAssertEqual(second.additionalPartKeys, source.additionalPartKeys)
+        XCTAssertEqual(second.videoCodec, "h264")
+        XCTAssertEqual(second.audioCodec, "dts")
+        XCTAssertEqual(second.videoBitDepth, 10)
+        XCTAssertNil(second.doviProfile, "A later SDR part must not inherit Dolby Vision from part one")
+        let third = second.withPartKey("/part3")
+        let restored = try JSONDecoder().decode(PlexMediaItem.self, from: JSONEncoder().encode(third))
+        XCTAssertEqual(restored.mediaIndex, 2)
+        XCTAssertEqual(restored.partIndex, 2)
+        let query = PlexAPIService.transcodeQueryItems(for: restored, sessionID: "test", offsetSeconds: 12,
+            isLocal: true, quality: .low, token: "synthetic", clientID: "synthetic", hevcCapable: true)
+        XCTAssertEqual(query.first { $0.name == "mediaIndex" }?.value, "2")
+        XCTAssertEqual(query.first { $0.name == "partIndex" }?.value, "2")
+    }
+
+    func testRecoveryNeverRaisesTheSelectedQualityCeiling() {
+        for quality in StreamQuality.allCases {
+            XCTAssertLessThanOrEqual(quality.cappedRecoveryQuality.maxBitrateKbps, quality.maxBitrateKbps)
+            XCTAssertLessThanOrEqual(quality.cappedRecoveryQuality.width, quality.width)
+            XCTAssertLessThanOrEqual(quality.cappedRecoveryQuality.height, quality.height)
+        }
+    }
+
+    func testTwelveBitHEVCIsNotOfferedAsNativePlayback() {
+        XCTAssertFalse(CodecSupport.canDecodeVideo(codec: "hevc", bitDepth: 12, hevcCapable: true))
+    }
+
     // MARK: - Direct play refuses what the decoder cannot render
 
     func testTenBitH264IsNotDecodable() {
@@ -36,6 +107,7 @@ final class PlaybackDecisionTests: XCTestCase {
     func testProfileIsMarqueesTwoTargetShape() {
         let profile = PlexAPIService.clientProfileExtra(hevcCapable: true, offersHEVC: true)
         let targets = profile.components(separatedBy: "+add-").filter { $0.contains("type=videoProfile") }
+        XCTAssertFalse(profile.contains("videoCodec=h264,mpeg4"), "MPEG-4 Part 2 raw-file support does not imply HLS support")
         XCTAssertEqual(targets.count, 2, "MPEG-TS for H.264 and fMP4 for HEVC")
         XCTAssertTrue(targets[0].contains("container=mpegts"))
         XCTAssertFalse(targets[0].contains("hevc"), "AVPlayer cannot render HEVC delivered in MPEG-TS")
@@ -120,6 +192,7 @@ final class PlaybackDecisionTests: XCTestCase {
     func testCappedRetryForcesA1080pReencodeAtTheSameOffset() {
         let svc = PlexAPIService(serverURL: "https://plex.local:32400", token: "t", serverID: "m")
         let url = svc.cappedTranscodeURL(for: item(width: 3840, height: 2160), offsetSeconds: 2480, sessionID: "s2")!
+        XCTAssertEqual(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "directStream" }?.value, "0")
         let q = URLComponents(url: url, resolvingAgainstBaseURL: false)!.queryItems!
         func v(_ n: String) -> String? { q.first { $0.name == n }?.value }
         XCTAssertEqual(v("videoResolution"), "1920x1080")

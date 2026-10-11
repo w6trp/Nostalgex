@@ -5,7 +5,7 @@ import AVFoundation
 /// plays a stratified sample of the library (every container / codec / bit depth / HDR /
 /// resolution combination present), tuning into each a third of the way through like a
 /// channel change does, and prints one line per file plus a pass rate. Run from a Mac with
-/// `xcrun devicectl device process launch --console ... com.muellhaus.nostalgex -playbackSoak 60`.
+/// `xcrun devicectl device process launch --console ... io.github.w6trp.couchwave -playbackSoak 60`.
 /// A file passes when the player reports playing AND the playhead advances at least 3s.
 @MainActor
 enum PlaybackSoak {

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Archive, export, validate and upload the tvOS app to App Store Connect.
 #
-#   ./scripts/release-tvos.sh            # archive -> validate -> upload
+#   ./scripts/release-tvos.sh --upload   # explicitly archive -> validate -> upload
 #   ./scripts/release-tvos.sh --dry-run  # stop after validation, upload nothing
 #
 # Bump MARKETING_VERSION / CURRENT_PROJECT_VERSION in the Xcode project first.
@@ -12,9 +12,13 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ARCHIVE=/tmp/Nostalgex.xcarchive
 EXPORT=/tmp/nostalgex-export
-KEY_ID=2Y8K8NTUV3
-ISSUER=e9e9d3ec-0c04-4694-bcb9-55e8407672f6
+KEY_ID=${ASC_KEY_ID:?Set ASC_KEY_ID for your own reviewed signing configuration}
+ISSUER=${ASC_ISSUER_ID:?Set ASC_ISSUER_ID for your own reviewed signing configuration}
 DRY_RUN=${1:-}
+if [[ "$DRY_RUN" != "--dry-run" && "$DRY_RUN" != "--upload" ]]; then
+  echo "Choose --dry-run (validation only) or explicitly --upload after reviewing signing/export settings."
+  exit 2
+fi
 
 VERSION=$(grep -m1 "MARKETING_VERSION = " "$ROOT/Nostalgex/Nostalgex.xcodeproj/project.pbxproj" | sed 's/.*= *//;s/;//')
 BUILD=$(grep -m1 "CURRENT_PROJECT_VERSION = " "$ROOT/Nostalgex/Nostalgex.xcodeproj/project.pbxproj" | sed 's/.*= *//;s/;//')

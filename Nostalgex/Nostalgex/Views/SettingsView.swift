@@ -42,16 +42,14 @@ struct SettingsView: View {
 
                 // Left: branding
                 VStack(alignment: .leading, spacing: 28) {
-                    Image("NostalgexLogo")
-                        .resizable()
-                        .scaledToFit()
+                    CouchWaveWordmark()
                         .frame(maxWidth: 440)
 
                     Text("CONNECT YOUR SERVER")
                         .font(.custom("DMMono-Medium", size: 40))
                         .foregroundStyle(.white.opacity(0.9))
 
-                    Text("Nostalgex builds a retro channel guide from your own library. Connect Plex, Jellyfin, or Emby to get started.")
+                    Text("CouchWave builds a retro channel guide from your own library. Connect Plex, Jellyfin, or Emby to get started.")
                         .font(.custom("DMMono-Regular", size: 22))
                         .foregroundStyle(.white.opacity(0.45))
                         .multilineTextAlignment(.leading)
@@ -128,7 +126,7 @@ struct SettingsView: View {
                     .font(.custom("DMMono-Medium", size: 22))
                     .foregroundStyle(Color(hex: "#FFB020"))
                     .multilineTextAlignment(.center)
-                Text("Nostalgex saved your connection but the Apple TV did not store it, so it was lost on restart. Signing in again will work for this session. Please report this.")
+                Text("CouchWave saved your connection but the Apple TV did not store it, so it was lost on restart. Signing in again will work for this session. Please report this.")
                     .font(.custom("DMMono-Regular", size: 17))
                     .foregroundStyle(.white.opacity(0.45))
                     .multilineTextAlignment(.center)

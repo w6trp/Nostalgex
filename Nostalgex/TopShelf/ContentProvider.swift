@@ -29,7 +29,7 @@ private struct TopShelfSnapshot: Codable {
 }
 
 private enum TopShelfStore {
-    static let appGroupID = "group.com.muellhaus.nostalgex"
+    static let appGroupID = "group.io.github.w6trp.couchwave"
 
     static func read() -> TopShelfSnapshot? {
         guard let container = FileManager.default
@@ -80,7 +80,7 @@ final class ContentProvider: TVTopShelfContentProvider {
                 item.setImageURL(url, for: .screenScale2x)
             }
             // Deep link straight to the channel. The app reads this on open.
-            if let action = URL(string: "nostalgex://channel/\(entry.channelID)") {
+            if let action = URL(string: "couchwave://channel/\(entry.channelID)") {
                 item.displayAction = TVTopShelfAction(url: action)
                 item.playAction = TVTopShelfAction(url: action)
             }

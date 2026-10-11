@@ -58,13 +58,44 @@ class AppState {
     /// Used only by analytics — no UI depends on it.
     private var analyticsSessionStartedAt: Date = Date()
 
+    private var backgroundReportingTask: UIBackgroundTaskIdentifier = .invalid
+
+    /// Keep normal app-exit reporting alive long enough to finish the final stop
+    /// and guarded post-write observations. The OS can still expire this budget.
+    private func reportPlaybackBackgrounded() {
+        let tracker = playbackTracker
+        let reporter = heartbeatQueue
+        let cleanup = heartbeatCleanupTask
+        guard tracker != nil || reporter != nil || cleanup != nil else { return }
+        endBackgroundReporting()
+        let identifier = UIApplication.shared.beginBackgroundTask(withName: "Finish playback reporting") { [weak self] in
+            self?.endBackgroundReporting()
+        }
+        backgroundReportingTask = identifier
+        tracker?.onBackground()
+        Task { @MainActor [weak self, tracker] in
+            await tracker?.waitForPendingReports()
+            await reporter?.waitForPendingReports()
+            await cleanup?.value
+            guard let self, self.backgroundReportingTask == identifier else { return }
+            self.endBackgroundReporting()
+        }
+    }
+
+    private func endBackgroundReporting() {
+        guard backgroundReportingTask != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundReportingTask)
+        backgroundReportingTask = .invalid
+    }
+
     private func setupBackgroundObservers() {
         NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 // Flush watch time before the tracker's own background handler zeroes it.
                 self?.emitPlaybackStoppedForActiveSession()
-                self?.playbackTracker?.onBackground()
+                self?.reportPlaybackBackgrounded()
+                self?.suspendPlayback()
                 // Then close out the foreground period. Ordering matters: watch time
                 // rides its own signal, and app.session.ended is the umbrella around
                 // it.
@@ -373,7 +404,10 @@ class AppState {
         }
     }
 
-    static let syncPlexActivityDefaultsKey = "nostalgex_sync_plex_activity"
+    // A new explicit choice is required for the clarified history-writing policy.
+    // Keep the legacy preference untouched for rollback; never migrate true implicitly.
+    static let legacySyncPlexActivityDefaultsKey = "nostalgex_sync_plex_activity"
+    static let syncPlexActivityDefaultsKey = "nostalgex_server_history_sync_v2"
 
     /// When true, playback is reported to the connected server so play counts grow
     /// and items can surface in Continue Watching. Off = watch privately.
@@ -388,14 +422,96 @@ class AppState {
     ) {
         didSet {
             UserDefaults.standard.set(syncPlexActivity, forKey: Self.syncPlexActivityDefaultsKey)
-            // Turning off mid-program: silently abandon the live tracker so the current
-            // item stops reporting immediately (no final "stopped" offset). The next item
-            // gets a tracker with no Plex API. Turning on takes effect on the next item.
-            if !syncPlexActivity { playbackTracker?.abandon() }
+            // Apply the choice to this item immediately. Turning off cancels queued
+            // writes without a final timeline, which itself could change resume state.
+            // Turning on explicitly opts in to history/resume effects, not just visibility.
+            if oldValue != syncPlexActivity {
+                if syncPlexActivity { plexHeartbeatOnly = false }
+                applyPlaybackReportingPolicy()
+            }
             if oldValue != syncPlexActivity {
                 Analytics.track(.settingChanged(key: "sync_plex_activity", value: syncPlexActivity ? "true" : "false"))
             }
         }
+    }
+
+    var heartbeatTestNotice: String?
+    private var heartbeatExperiment: PlexHeartbeatExperiment?
+    private var heartbeatQueue: PlexHeartbeatReporter?
+    private var heartbeatExperimentID: UUID?
+    private var heartbeatCleanupTask: Task<Void, Never>?
+    private var heartbeatExperimentServerURL: String?
+    private var heartbeatExperimentToken: String?
+
+    func heartbeatReporter(for api: PlexAPIService?) -> PlexHeartbeatReporter? {
+        guard heartbeatReportingActive, let api else { return nil }
+        if heartbeatExperiment != nil {
+            guard heartbeatExperimentServerURL == api.serverURL, heartbeatExperimentToken == api.token else {
+                heartbeatTestNotice = "Heartbeat stopped: the server or signed-in profile changed."
+                plexHeartbeatOnly = false
+                return nil
+            }
+            return heartbeatQueue
+        }
+        let experimentID = UUID()
+        let experiment = PlexHeartbeatExperiment(api: api, predecessor: heartbeatCleanupTask) { [weak self] message in
+            guard let self, self.heartbeatExperimentID == experimentID else { return }
+            self.heartbeatTestNotice = message
+            self.plexHeartbeatOnly = false
+        }
+        heartbeatExperimentID = experimentID
+        heartbeatExperiment = experiment
+        heartbeatExperimentServerURL = api.serverURL
+        heartbeatExperimentToken = api.token
+        let reporter = PlexHeartbeatReporter(transport: experiment, predecessor: heartbeatCleanupTask) { [weak self] message in
+            guard let self, self.heartbeatExperimentID == experimentID else { return }
+            self.heartbeatTestNotice = message
+            self.plexHeartbeatOnly = false
+        }
+        heartbeatQueue = reporter
+        return reporter
+    }
+
+    static let plexHeartbeatOnlyDefaultsKey = "couchwave_plex_heartbeat_only_v1"
+    var plexHeartbeatOnly: Bool = UserDefaults.standard.bool(forKey: AppState.plexHeartbeatOnlyDefaultsKey) {
+        didSet {
+            UserDefaults.standard.set(plexHeartbeatOnly, forKey: Self.plexHeartbeatOnlyDefaultsKey)
+            if oldValue != plexHeartbeatOnly {
+                if plexHeartbeatOnly { heartbeatTestNotice = nil; syncPlexActivity = false }
+                applyPlaybackReportingPolicy()
+            }
+        }
+    }
+
+    var heartbeatReportingActive: Bool { !isDemoMode && backendKind == .plex && plexHeartbeatOnly }
+
+    func closeHeartbeatReporters() {
+        if let experiment = heartbeatExperiment {
+            let cleanup = heartbeatQueue?.disable()
+            heartbeatQueue = nil
+            heartbeatExperiment = nil
+            heartbeatExperimentID = nil
+            heartbeatExperimentServerURL = nil
+            heartbeatExperimentToken = nil
+            let previousCleanup = heartbeatCleanupTask
+            heartbeatCleanupTask = Task {
+                await previousCleanup?.value
+                await cleanup?.value
+                await experiment.cancel()
+            }
+        }
+    }
+
+    func applyPlaybackReportingPolicy() {
+        if !heartbeatReportingActive { closeHeartbeatReporters() }
+        let enabled = !isDemoMode && (syncPlexActivity || heartbeatReportingActive)
+        let backend: (any MediaBackend)? = enabled ? api(for: playbackTracker?.item.serverID) : nil
+        playbackTracker?.setReporters(
+            plexAPI: heartbeatReportingActive ? nil : backend as? PlexAPIService,
+            watchReporter: syncPlexActivity ? backend as? any WatchActivityReporting : nil,
+            reportingMode: heartbeatReportingActive ? .heartbeatOnly : .history,
+            heartbeatReporter: heartbeatReporter(for: backend as? PlexAPIService)
+        )
     }
 
     /// Resolves the stored `syncPlexActivity` preference. The key is only written once the
@@ -460,7 +576,7 @@ class AppState {
         }
     }
 
-    private static let audioLanguageDefaultsKey = "nostalgex_audio_language"
+    private static let audioLanguageDefaultsKey = AudioLanguageSelection.defaultsKey
 
     private static func loadPreferredAudioLanguageInitial() -> String {
         if let s = UserDefaults.standard.string(forKey: audioLanguageDefaultsKey), !s.isEmpty {
@@ -517,6 +633,8 @@ class AppState {
         didSet { if currentItem?.ratingKey != oldValue?.ratingKey { refreshNowPlayingInfo() } }
     }
     var currentPartIndex: Int = 0
+    var currentPartBaseSeconds: Double = 0
+    var currentPartDurationsKnown = true
     var isFullScreen: Bool = false {
         didSet {
             if oldValue != isFullScreen {
@@ -576,6 +694,10 @@ class AppState {
     var loadGeneration: Int = 0
     var loadDebounceTimer: Timer?
     var playbackTracker: PlaybackTracker?
+    @ObservationIgnored var playbackWatchdogTask: Task<Void, Never>?
+    @ObservationIgnored var playbackRecoveryInFlight = false
+    @ObservationIgnored var musicEnrichmentTask: Task<Void, Never>?
+    var pendingDeepLinkChannelID: Int?
     var dailyRefreshTask: Task<Void, Never>?
     /// Unix seconds when the library was last loaded. Drives 24h rolling cache
     /// validity for both the on-disk snapshot and the background daily refresh.

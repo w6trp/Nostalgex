@@ -6,6 +6,8 @@
 	<string>LongFormAudio</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>CFBundleURLTypes</key>
+	<array><dict><key>CFBundleURLSchemes</key><array><string>couchwave</string></array></dict></array>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>plex</string>
@@ -24,8 +26,8 @@
 		<true/>
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Nostalgex streams from your Plex, Jellyfin or Emby server on your local network, and looks for servers on it when you ask it to.</string>
+	<string>CouchWave streams from your Plex, Jellyfin or Emby server on your local network, and looks for servers on it when you ask it to.</string>
 	<key>TelemetryDeckAppID</key>
-	<string>2943D3D0-35BC-430F-B0BD-EFF3A5FE79D7</string>
+	<string></string>
 </dict>
 </plist>

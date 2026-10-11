@@ -42,10 +42,23 @@ extension AppState {
         serverURL = Self.normalizePlexServerURL(credentialStore.load(key: "plex_server_url") ?? "")
         token = credentialStore.load(key: "plex_token") ?? ""
 
+
+
         // Backend selection (defaults to Plex for existing installs).
         backendKind = credentialStore.load(key: Self.backendKindKey)
             .flatMap(MediaBackendKind.init(rawValue:)) ?? .plex
         jellyfinUserId = credentialStore.load(key: Self.jellyfinUserIdKey) ?? ""
+        #if DEBUG
+        // Explicit local launch actions used only for the owner-approved beta test.
+        if ProcessInfo.processInfo.arguments.contains("-couchwaveReportingOff") {
+            plexHeartbeatOnly = false
+            syncPlexActivity = false
+        } else if ProcessInfo.processInfo.arguments.contains("-couchwaveHeartbeatOnly"),
+                  backendKind == .plex, !token.isEmpty {
+            syncPlexActivity = false
+            plexHeartbeatOnly = true
+        }
+        #endif
 
         // One-time migration: re-save credentials under AfterFirstUnlock (was ThisDeviceOnly,
         // which doesn't survive device restores or tvOS updates). Harmless if already migrated.
@@ -312,8 +325,11 @@ extension AppState {
     func recoverPlexServersIfNeeded() async -> Bool {
         guard backendKind == .plex, !token.isEmpty, selectedServers.isEmpty else { return true }
         print("[Plex90] AUTH: saved server list missing, rediscovering from plex.tv")
+        let session = librarySessionGeneration
+        let accountToken = token
         do {
-            let result = try await PlexAPIService.discoverServers(token: token)
+            let result = try await PlexAPIService.discoverServers(token: accountToken)
+            guard !Task.isCancelled, librarySessionGeneration == session, token == accountToken else { return false }
             let servers = result.reachable.map {
                 ServerRef(machineIdentifier: $0.machineIdentifier, name: $0.name, baseURL: $0.bestReachableURI, owned: $0.owned, token: $0.token)
             }
@@ -327,6 +343,7 @@ extension AppState {
             saveCredentials()
             return true
         } catch {
+            guard !Task.isCancelled, librarySessionGeneration == session else { return false }
             errorMessage = "Signed in, but couldn't reach plex.tv to find your servers. Check your connection and Retry."
             return false
         }
@@ -587,7 +604,7 @@ extension AppState {
         if let urlError = error as? URLError {
             switch urlError.code {
             case .appTransportSecurityRequiresSecureConnection:
-                return "tvOS blocked the plain http:// address (ATS error -1022). Update Nostalgex, or use https:// if you are on an older build."
+                return "tvOS blocked the plain http:// address (ATS error -1022). Update CouchWave, or use https:// if you are on an older build."
             case .cannotFindHost, .dnsLookupFailed:
                 return "Could not find that host. Check the address."
             case .cannotConnectToHost:
@@ -655,6 +672,14 @@ extension AppState {
     }
 
     func disconnect() {
+        closeHeartbeatReporters()
+        invalidatePlaybackWork()
+        musicEnrichmentTask?.cancel()
+        musicEnrichmentTask = nil
+        dailyRefreshTask?.cancel()
+        dailyRefreshTask = nil
+        TopShelfStore.clear()
+        pendingDeepLinkChannelID = nil
         Analytics.track(.settingChanged(key: "disconnect", value: "tapped"))
         // Fold accumulated watch time into one final playback.stopped before the
         // tracker is torn down. Otherwise every disconnect drops the last session's
@@ -712,9 +737,11 @@ extension AppState {
                 }
                 do {
                     if let authToken = try await PlexAPIService.checkPIN(id: id) {
+                        guard !Task.isCancelled, self.pinID == id else { return }
                         isDiscoveringServers = true
                         do {
                             let result = try await PlexAPIService.discoverServers(token: authToken)
+                            guard !Task.isCancelled, self.pinID == id else { return }
                             isDiscoveringServers = false
                             availableServers = result.reachable.map {
                                 ServerRef(machineIdentifier: $0.machineIdentifier, name: $0.name, baseURL: $0.bestReachableURI, owned: $0.owned, token: $0.token)
@@ -755,6 +782,7 @@ extension AppState {
                                 needsServerSelection = true
                             }
                         } catch {
+                            guard !Task.isCancelled, self.pinID == id else { return }
                             isDiscoveringServers = false
                             Analytics.track(.connectFailed(backend: .plex, reason: "server_discovery_failed"))
                             authError = "Signed in, but couldn't reach plex.tv to find your servers. Check your connection and try again."

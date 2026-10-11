@@ -40,38 +40,33 @@ Optional: `PORT=8080 npm run devtools` to bind a different port.
 
 Plex Web → any item → ⋯ → **Get Info** → **View XML** → the `X-Plex-Token=…` query param in the URL bar is your token.
 
-## How the schedule explorer works
+## Access and transport
 
-The Nostalgex schedule is **fully deterministic** — every airing is computed from `unix time + channel id + day number + golden-ratio offset` against the channel's pool. That means past airings are reproducible without any logging: the explorer just replays the algorithm for any timestamp.
+The server binds to `127.0.0.1` by default. LAN access is opt-in: set
+`DEVTOOLS_HOST` and a separately supplied `DEVTOOLS_TOKEN` of at least 32 characters.
+API clients send `Authorization: Bearer <token>`; the browser uses its Basic-auth
+prompt (any username, token as password). Tokens are never accepted in URLs.
+Use only a trusted network or an authenticated TLS reverse proxy for LAN access;
+the built-in HTTP listener does not encrypt transport. Never expose this diagnostic
+server to the public internet. Requests from other browser origins are rejected.
 
-The JS implementation in `lib/schedule.mjs` is a port of `Nostalgex/Models/ChannelSchedule.swift`. If you change the algorithm in Swift, port the change here too so the explorer stays accurate.
+Plex HTTPS uses normal certificate validation. Configure `NODE_EXTRA_CA_CERTS`
+with a trusted private CA when necessary. Do not disable TLS validation globally.
 
-### Caveats
+## Schedules and coverage
 
-The dev server doesn't have TMDB / OMDb enrichment data, so it can't evaluate channels that filter by **keywords, networks, prodCos, or ratingMin**. Channels using those rules will show fewer (or zero) airings here than in the actual app. The Schedule Explorer flags affected channels with a ⚠ in the channel dropdown.
+Generated schedules use `scripts/nostalgex-daily-manifest.js`, the same packing
+engine as the browser tuner, including local calendar day boundaries and partial
+source offsets. A generated snapshot begins without the device's previous-day
+manifest cache. Pool contents, enrichment, local timezone and prior manifest state
+can still differ from an Apple TV. Use a snapshot exported by that device to inspect
+what it actually scheduled. Generated snapshots are diagnostic reconstructions.
 
-For year, content rating, runtime, genre, watched-state, and title filters: results match the app exactly.
-
-## How coverage works
-
-Coverage inverts the snapshot: `build-snapshot.mjs` records each channel's `poolKeys`, and `lib/coverage.mjs` flips that into *item → channels*. An item in zero pools is an **orphan**.
-
-**Read every number as a lower bound.** The snapshot is produced by the shared JS filter, not by the tvOS app. The filter cannot evaluate `networks`, `excludeNetworks`, `excludeKeywords` or `ratingMin`, only partially evaluates `studios` / `productionCompanies` (Plex studio field only), and TMDB keyword enrichment runs for movies only. So a channel that relies on those rules under-populates here, and an orphan is a *candidate to check*, not a confirmed gap. The page separates orphans explained by those tool limits from the rest, and the channel table shows which rules each channel uses that the tool can't fully evaluate.
-
-Orphans are grouped by the first reason that applies, in this order:
-
-| Group | Meaning | What to do |
-|---|---|---|
-| No TMDB id from Plex | Plex never matched the item to TMDB, so manifest claims and keyword rules can't reach it | Plex → item → ⋯ → Match. Then rescan and rebuild the snapshot |
-| No genres in Plex | Most channels gate on genre | Refresh metadata in Plex; check the library agent has genres enabled |
-| No year in Plex | Decade channels need a year | Fix the match or edit the year |
-| TV item: tool has no keyword data | **Tool limitation.** Keyword-driven TV channels can't be evaluated here | Probably fine in the app. Verify on the device, or add TV keyword enrichment to `build-snapshot.mjs` |
-| Would pass a channel this tool can't evaluate | **Tool limitation.** With `networks` / `ratingMin` / `excludeKeywords` set aside, the item passes a channel that uses them; the app evaluates those with TMDB/OMDb data | Probably pooled there in the app. The likely channels are shown per item |
-| Has metadata, matched nothing | Id, genres and year are present but no rule or claim accepts it | Either the lineup has no home for this kind of item, or a rule is tighter than intended. Use Pools to inspect the channel you expected |
-
-A **"claimed" badge** on an orphan means `channels-memberships.json` claims it for a channel but the pool rejected it. A manifest claim only bypasses `genres.include`; the channel's `type`, `yearRange`, `titleContains` and `genres.exclude` still apply, so one of those vetoed it. That is the most precise "look here" signal the tool gives.
-
-Episodes are collapsed to their show in every table, so an unmatched series reads as one problem rather than two hundred.
+The shared channel filter implements rating, keyword and network rules. Plex supplies
+ordinary ratings/genres; optional TMDB enrichment fetches keywords for both films and
+shows. Missing TMDB/OMDb/network/company data can reduce or otherwise change channel
+membership. Coverage reports list candidates to investigate, not proven library
+problems or exact parity guarantees. Snapshot data does not refresh itself.
 
 ## How the audit works
 

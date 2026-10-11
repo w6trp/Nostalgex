@@ -1,5 +1,11 @@
 # Releasing Nostalgex
 
+> Fork maintainers: the account, site, version and distribution notes below describe
+> the upstream project. They do not configure a fork for release. Start with
+> [Fork testing and distribution](docs/FORK-TESTING.md), use your own signing identity
+> and services, and preserve the MIT license and upstream attribution.
+> A push to this fork does not imply a web deployment or an Apple upload.
+
 Two things ship out of this repo and they ship independently:
 
 - **The site** (`index.html`, `web-tuner.html`, `support.html`, `plex-tuner.html`) on Vercel.

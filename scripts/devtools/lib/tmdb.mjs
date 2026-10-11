@@ -19,10 +19,10 @@ async function tmdbGet(path) {
   const url = `${BASE}${path}${sep}api_key=${API_KEY}`;
   try {
     const res = await fetch(url);
-    if (!res.ok) return null;
+    if (!res.ok) throw new Error(`TMDB returned ${res.status}`);
     return res.json();
-  } catch {
-    return null;
+  } catch (error) {
+    throw error;
   }
 }
 

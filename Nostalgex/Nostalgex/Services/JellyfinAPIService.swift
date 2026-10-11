@@ -31,7 +31,7 @@ struct JellyfinAPIService: MediaBackend, WatchActivityReporting {
     /// `MediaBrowser` authorization scheme. `Token` is omitted when empty (initial auth).
     static func authorizationHeader(deviceID: String, token: String) -> String {
         var fields = [
-            "Client=\"Nostalgex\"",
+            "Client=\"CouchWave\"",
             "Device=\"Apple TV\"",
             "DeviceId=\"\(deviceID)\"",
             "Version=\"1.0\"",
@@ -541,8 +541,9 @@ struct JellyfinAPIService: MediaBackend, WatchActivityReporting {
         mediaSourceId: String,
         playSessionId: String,
         positionTicks: Int,
-        event: MediaServerPlaybackReport.Event
-    ) async {
+        event: MediaServerPlaybackReport.Event,
+        isPaused: Bool
+    ) async -> Bool {
         await MediaServerPlaybackReport.post(
             serverURL: serverURL,
             authorization: Self.authorizationHeader(deviceID: deviceID, token: accessToken),
@@ -550,11 +551,12 @@ struct JellyfinAPIService: MediaBackend, WatchActivityReporting {
             itemId: itemId,
             mediaSourceId: mediaSourceId,
             playSessionId: playSessionId,
-            positionTicks: positionTicks
+            positionTicks: positionTicks,
+            isPaused: isPaused
         )
     }
 
-    func markWatched(itemId: String) async {
+    func markWatched(itemId: String) async -> Bool {
         await MediaServerPlaybackReport.markPlayed(
             serverURL: serverURL,
             authorization: Self.authorizationHeader(deviceID: deviceID, token: accessToken),

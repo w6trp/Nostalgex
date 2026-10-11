@@ -7,6 +7,7 @@ struct StoredManifestBlock: Codable, Equatable {
     let ratingKey: String
     let startUnix: Int
     let endUnix: Int
+    var sourceOffsetSeconds: Int = 0
 }
 
 struct DailyManifestFile: Codable {
@@ -19,7 +20,7 @@ struct DailyManifestFile: Codable {
 }
 
 enum DailyManifestStore {
-    private static let schemaVersion = 1
+    static let schemaVersion = 2
     private static let encoder: JSONEncoder = {
         let e = JSONEncoder()
         e.outputFormatting = [.sortedKeys]

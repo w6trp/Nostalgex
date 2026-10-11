@@ -6,7 +6,8 @@
 (function (global) {
   const BASE = 'https://musicbrainz.org/ws/2';
   const USER_AGENT = 'Nostalgex/1.0.2 (https://www.nostalgex.app; web-tuner)';
-  const CACHE_KEY = 'nostalgex_music_video_enrichments_v1';
+  const CACHE_KEY = 'nostalgex_music_video_enrichments_v2';
+  const itemKey = item => item.itemKey || JSON.stringify([item.serverId || item.serverUrl || '', String(item.ratingKey)]);
   const MIN_INTERVAL_MS = 1050;
 
   let lastRequestAt = 0;
@@ -86,24 +87,9 @@
   let deezerLastRequestAt = 0;
   let deezerCallbackSeq = 0;
 
-  function deezerJSONP(path, params) {
-    return new Promise((resolve, reject) => {
-      const elapsed = Date.now() - deezerLastRequestAt;
-      const wait = elapsed < DEEZER_MIN_INTERVAL_MS ? DEEZER_MIN_INTERVAL_MS - elapsed : 0;
-      setTimeout(() => {
-        deezerLastRequestAt = Date.now();
-        const cb = `__nostalgexDeezer${++deezerCallbackSeq}`;
-        const q = new URLSearchParams({ ...(params || {}), output: 'jsonp', callback: cb });
-        const script = document.createElement('script');
-        const timer = setTimeout(() => { cleanup(); reject(new Error('Deezer timeout')); }, 15000);
-        function cleanup() { clearTimeout(timer); delete global[cb]; script.remove(); }
-        global[cb] = (data) => { cleanup(); resolve(data); };
-        script.onerror = () => { cleanup(); reject(new Error('Deezer script error')); };
-        script.src = `${DEEZER_BASE}${path}?${q.toString()}`;
-        document.head.appendChild(script);
-      }, wait);
-    });
-  }
+  // Do not execute JSONP on the origin that stores media-server credentials.
+  // Until Deezer supplies a browser CORS endpoint, retain Plex/MusicBrainz genres.
+  function deezerJSONP() { return Promise.resolve({ data: [] }); }
 
   // Mirrors DeezerService.mapGenres in the tvOS app.
   function mapDeezerGenres(raw) {
@@ -470,7 +456,7 @@
 
   function itemsWithDisplayMetadata(items) {
     return items.map((item) => {
-      const enr = cache[item.ratingKey];
+      const enr = cache[itemKey(item)];
       if (enr) return applyEnrichmentToItem(item, enr);
       if (!isMusicVideoItem(item)) return item;
       const year = resolveMusicYear(yearInTitle(item.title), null, item.year) || '';
@@ -500,11 +486,11 @@
       done += 1;
       if (onProgress) onProgress(done, mv.length, item.title);
 
-      const existing = cache[item.ratingKey];
+      const existing = cache[itemKey(item)];
       if (isSettled(existing)) continue;
       if (needsOnlyGenres(existing)) {
         // Named by MusicBrainz, never got a genre: Deezer only, no second 1/sec crawl.
-        cache[item.ratingKey] = await withDeezerGenres(existing, item);
+        cache[itemKey(item)] = await withDeezerGenres(existing, item);
         updated += 1;
         continue;
       }
@@ -530,7 +516,7 @@
           fetchedAt: Date.now(),
         };
         enr.hasUsefulGenres = usefulGenres(enr.genres);
-        cache[item.ratingKey] = enr.hasUsefulGenres ? enr : await withDeezerGenres(enr, item);
+        cache[itemKey(item)] = enr.hasUsefulGenres ? enr : await withDeezerGenres(enr, item);
         updated += 1;
       } catch (e) {
         console.warn('[MusicBrainz] resolve failed', item.title, e);
@@ -544,7 +530,7 @@
           fetchedAt: Date.now(),
           hasUsefulGenres: usefulGenres(item.genres),
         };
-        cache[item.ratingKey] = fallback.hasUsefulGenres ? fallback : await withDeezerGenres(fallback, item);
+        cache[itemKey(item)] = fallback.hasUsefulGenres ? fallback : await withDeezerGenres(fallback, item);
         updated += 1;
       }
     }
