@@ -3,6 +3,18 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-10-11 (experimental cutoff and disable cleanup)
+
+**Shipped.** CouchWave 1.0.25 (51) is signed and installed after the owner confirmed the TV was idle. It was not launched over an active viewing test.
+
+**Changed.** Expiry and manual disable now close only the exact sessions successfully opened by the experiment, using stopped reports without position or duration. Cleanup waits for in-flight acknowledgements, checks unchanged stored state before and after each write, and refuses writes after mutation or incomplete verification. Rapid reactivation waits for old cleanup. The ten-minute experiment limit remains; a separate upstream feature branch is being prepared without that limit.
+
+**Validation.** Full native suite passed 484 tests with 2 optional live harnesses skipped. Ten new regressions cover timer/request cutoff, manual disable, channel changes, background/foreground transitions, in-flight requests, rapid reactivation, and failed/mutated verification. Signed build and strict codesign verification passed.
+
+**Half-done.** Physical-device cutoff/manual-disable verification is pending. The earlier short live observations do not establish long-run behavior. Cleanup is deliberately unconfirmed when network, storage, or state verification fails; no history is reset.
+
+**Next.** For this bounded beta, watch eight minutes, switch twice before minute ten, continue past eleven minutes and verify reporting switches off while playback continues. The separately requested production upstream PR must have no experimental cutoff and must clearly disclose pending sustained hardware validation.
+
 ## 2026-10-11 (normal-exit stop reporting)
 
 **Shipped.** CouchWave 1.0.25 (50) is signed, installed and running on the paired tvOS device.

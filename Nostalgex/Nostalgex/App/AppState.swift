@@ -432,6 +432,8 @@ class AppState {
 
     var heartbeatTestNotice: String?
     private var heartbeatExperiment: PlexHeartbeatExperiment?
+    private var heartbeatExperimentID: UUID?
+    private var heartbeatCleanupTask: Task<Void, Never>?
     private var heartbeatExperimentServerURL: String?
     private var heartbeatExperimentToken: String?
 
@@ -445,10 +447,13 @@ class AppState {
             }
             return heartbeatExperiment
         }
-        let experiment = PlexHeartbeatExperiment(api: api) { [weak self] message in
-            self?.heartbeatTestNotice = message
-            self?.plexHeartbeatOnly = false
+        let experimentID = UUID()
+        let experiment = PlexHeartbeatExperiment(api: api, predecessor: heartbeatCleanupTask) { [weak self] message in
+            guard let self, self.heartbeatExperimentID == experimentID else { return }
+            self.heartbeatTestNotice = message
+            self.plexHeartbeatOnly = false
         }
+        heartbeatExperimentID = experimentID
         heartbeatExperiment = experiment
         heartbeatExperimentServerURL = api.serverURL
         heartbeatExperimentToken = api.token
@@ -471,9 +476,14 @@ class AppState {
     func applyPlaybackReportingPolicy() {
         if !heartbeatReportingActive, let experiment = heartbeatExperiment {
             heartbeatExperiment = nil
+            heartbeatExperimentID = nil
             heartbeatExperimentServerURL = nil
             heartbeatExperimentToken = nil
-            Task { await experiment.cancel() }
+            let previousCleanup = heartbeatCleanupTask
+            heartbeatCleanupTask = Task {
+                await previousCleanup?.value
+                await experiment.cancel()
+            }
         }
         let enabled = !isDemoMode && (syncPlexActivity || heartbeatReportingActive)
         let backend: (any MediaBackend)? = enabled ? api(for: playbackTracker?.item.serverID) : nil
