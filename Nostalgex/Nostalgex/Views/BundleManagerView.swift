@@ -590,10 +590,19 @@ struct SettingsPageView: View {
                 .id("plex_sync")
                 .accessibilityHint("Updates play counts, resume points and Continue Watching in \(appState.backendDisplayName)")
                 if appState.backendKind == .plex {
-                    Text("Session-only reporting is not enabled: Plex activity updates may also change history and resume points. Leave sync off to avoid those writes.")
-                        .font(.system(size: 16))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    SettingsToggleRow(
+                        title: "PLEX HEARTBEAT ONLY (EXPERIMENTAL)",
+                        subtitle: "Reports the current title and playback state without position, duration or watched marks. Server history effects are being tested.",
+                        warning: appState.plexHeartbeatOnly ? "Test mode: stops if watch-state changes are detected" : nil,
+                        isOn: appState.plexHeartbeatOnly,
+                        isFocused: focusedItem == "plex_heartbeat"
+                    ) { appState.plexHeartbeatOnly.toggle() }
+                    .focused($focusedItem, equals: "plex_heartbeat")
+                    .id("plex_heartbeat")
+                    .accessibilityHint("Experimental Plex heartbeat; does not enable history and resume sync")
+                    if let reason = appState.heartbeatTestNotice {
+                        Text(reason).font(.system(size: 16)).foregroundStyle(.orange)
+                    }
                 }
             }
 

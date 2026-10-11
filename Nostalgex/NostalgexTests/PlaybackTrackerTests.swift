@@ -3,7 +3,8 @@ import XCTest
 
 private actor RecordingPlexReporting: PlexPlaybackReporting {
     private var states: [String] = []
-    private var positions: [Int] = []
+    private var positions: [Int?] = []
+    private var durations: [Int?] = []
     private var markResults: [Bool]
     private var markCount = 0
     private var holdFirst: Bool
@@ -14,14 +15,15 @@ private actor RecordingPlexReporting: PlexPlaybackReporting {
         self.markResults = markResults
         self.holdFirst = holdFirst
     }
-    func reportTimeline(ratingKey: String, key: String, state: String, timeMs: Int,
-                        durationMs: Int, sessionID: String) async -> Bool {
+    func reportTimeline(ratingKey: String, key: String, state: String, timeMs: Int?,
+                        durationMs: Int?, sessionID: String) async -> Bool {
         if !firstStarted {
             firstStarted = true
             if holdFirst { await withCheckedContinuation { release = $0 } }
         }
         states.append(state)
         positions.append(timeMs)
+        durations.append(durationMs)
         return true
     }
     func scrobble(ratingKey: String) async -> Bool {
@@ -32,7 +34,8 @@ private actor RecordingPlexReporting: PlexPlaybackReporting {
         while !firstStarted { await Task.yield() }
     }
     func releaseFirstRequest() { release?.resume(); release = nil }
-    func snapshot() -> (states: [String], positions: [Int], marks: Int) { (states, positions, markCount) }
+    func snapshot() -> (states: [String], positions: [Int?], marks: Int) { (states, positions, markCount) }
+    func allDurations() -> [Int?] { durations }
 }
 
 private actor RecordingWatchReporting: WatchActivityReporting {
@@ -67,6 +70,58 @@ final class PlaybackTrackerTests: XCTestCase {
                         automaticallySchedulesTimer: false)
     }
 
+    func testHeartbeatOmitsPositionDurationAndNeverScrobblesAcrossCompletion() async throws {
+        let api = RecordingPlexReporting(); let clock = Clock()
+        let t = PlaybackTracker(item: item(), seekOffset: 0, plexAPI: api,
+                                reportingMode: .heartbeatOnly, clock: { clock.now }, automaticallySchedulesTimer: false)
+        t.onPlaybackReady(); t.onPlaybackUpdate(positionSeconds: 0, state: .playing)
+        for second in 1...60 {
+            clock.now = Double(second)
+            t.onPlaybackUpdate(positionSeconds: Double(second), state: .playing)
+            if second % 10 == 0 { t.onTimelineTick() }
+        }
+        t.onPlaybackUpdate(positionSeconds: 60, state: .paused)
+        t.stop(); await t.waitForPendingReports()
+        let reports = await api.snapshot(); let durations = await api.allDurations()
+        XCTAssertEqual(reports.states.first, "playing")
+        XCTAssertEqual(reports.states.suffix(2), ["paused", "stopped"])
+        XCTAssertTrue(reports.positions.allSatisfy { $0 == nil })
+        XCTAssertTrue(durations.allSatisfy { $0 == nil })
+        XCTAssertEqual(reports.marks, 0)
+        XCTAssertFalse(t.scrobbled)
+    }
+
+    func testSwitchingToHeartbeatDropsPositionAndDisablingCancelsFutureReports() async {
+        let api = RecordingPlexReporting(); let clock = Clock(); let t = tracker(api, clock)
+        t.onPlaybackReady(); t.onPlaybackUpdate(positionSeconds: 10, state: .playing)
+        await t.waitForPendingReports()
+        t.setReporters(plexAPI: api, reportingMode: .heartbeatOnly)
+        await t.waitForPendingReports()
+        let reports = await api.snapshot()
+        XCTAssertEqual(reports.positions, [10_000, nil])
+        t.setReporters(plexAPI: nil); t.onTimelineTick(); t.stop()
+        await t.waitForPendingReports()
+        let after = await api.snapshot()
+        XCTAssertEqual(after.states.count, reports.states.count)
+        XCTAssertEqual(after.marks, 0)
+    }
+
+    func testActualHeartbeatRequestOmitsFieldsRatherThanSendingZero() throws {
+        let api = PlexAPIService(serverURL: "https://synthetic.invalid", token: "synthetic-test-token")
+        let components = try XCTUnwrap(api.timelineComponents(ratingKey: "42", key: "/library/metadata/42",
+            state: "playing", timeMs: nil, durationMs: nil))
+        let request = try XCTUnwrap(api.playbackReportRequest(components: components, method: "POST", sessionID: "test-session"))
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.url?.path, "/:/timeline")
+        XCTAssertEqual(Set(components.queryItems!.map(\.name)), ["ratingKey", "key", "state"])
+        XCTAssertEqual(request.value(forHTTPHeaderField: "X-Plex-Session-Identifier"), "test-session")
+        XCTAssertFalse(request.url!.absoluteString.contains("synthetic-test-token"))
+        let full = try XCTUnwrap(api.timelineComponents(ratingKey: "42", key: "/library/metadata/42",
+            state: "playing", timeMs: 12_345, durationMs: 60_000))
+        XCTAssertEqual(full.queryItems?.first { $0.name == "time" }?.value, "12345")
+        XCTAssertEqual(full.queryItems?.first { $0.name == "duration" }?.value, "60000")
+    }
+
     func testReadyAndPreparingDoNotClaimPlaybackOrReportUnseekedPosition() async {
         let api = RecordingPlexReporting(); let clock = Clock(); let t = tracker(api, clock)
         t.onPlaybackUpdate(positionSeconds: 0, state: .paused)
@@ -94,7 +149,7 @@ final class PlaybackTrackerTests: XCTestCase {
         XCTAssertFalse(t.scrobbled)
         let reports = await api.snapshot()
         XCTAssertEqual(reports.states.last, "buffering")
-        XCTAssertEqual(reports.positions.last, 10_000)
+        XCTAssertEqual(reports.positions.last ?? nil, 10_000)
         XCTAssertEqual(reports.marks, 0)
     }
 
@@ -108,7 +163,7 @@ final class PlaybackTrackerTests: XCTestCase {
         XCTAssertEqual(t.flushWatchSecondsForAnalytics(), 10, accuracy: 0.001)
         let reports = await api.snapshot()
         XCTAssertEqual(reports.states, ["playing", "paused", "playing", "stopped"])
-        XCTAssertEqual(reports.positions.last, 10_000)
+        XCTAssertEqual(reports.positions.last ?? nil, 10_000)
     }
 
     func testStopCannotOvertakeDelayedPlayingAndNoPulseFollowsStop() async {
@@ -226,7 +281,7 @@ final class PlaybackTrackerTests: XCTestCase {
         let reports = await api.snapshot()
         XCTAssertEqual(reports.marks, 1)
         XCTAssertEqual(reports.states.filter { $0 == "stopped" }.count, 1)
-        XCTAssertEqual(reports.positions, reports.positions.sorted())
+        XCTAssertEqual(reports.positions.compactMap { $0 }, reports.positions.compactMap { $0 }.sorted())
         XCTAssertEqual(reports.positions.last, 60_000)
     }
 

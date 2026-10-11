@@ -396,17 +396,67 @@ class AppState {
             // writes without a final timeline, which itself could change resume state.
             // Turning on explicitly opts in to history/resume effects, not just visibility.
             if oldValue != syncPlexActivity {
-                let reportingBackend: (any MediaBackend)? = syncPlexActivity && !isDemoMode
-                    ? api(for: playbackTracker?.item.serverID) : nil
-                playbackTracker?.setReporters(
-                    plexAPI: reportingBackend as? PlexAPIService,
-                    watchReporter: reportingBackend as? any WatchActivityReporting
-                )
+                if syncPlexActivity { plexHeartbeatOnly = false }
+                applyPlaybackReportingPolicy()
             }
             if oldValue != syncPlexActivity {
                 Analytics.track(.settingChanged(key: "sync_plex_activity", value: syncPlexActivity ? "true" : "false"))
             }
         }
+    }
+
+    var heartbeatTestNotice: String?
+    private var heartbeatExperiment: PlexHeartbeatExperiment?
+    private var heartbeatExperimentServerURL: String?
+    private var heartbeatExperimentToken: String?
+
+    func heartbeatReporter(for api: PlexAPIService?) -> (any PlexPlaybackReporting)? {
+        guard let api else { return nil }
+        if let heartbeatExperiment {
+            guard heartbeatExperimentServerURL == api.serverURL, heartbeatExperimentToken == api.token else {
+                heartbeatTestNotice = "Heartbeat stopped: the server or signed-in profile changed."
+                plexHeartbeatOnly = false
+                return nil
+            }
+            return heartbeatExperiment
+        }
+        let experiment = PlexHeartbeatExperiment(api: api) { [weak self] message in
+            self?.heartbeatTestNotice = message
+            self?.plexHeartbeatOnly = false
+        }
+        heartbeatExperiment = experiment
+        heartbeatExperimentServerURL = api.serverURL
+        heartbeatExperimentToken = api.token
+        return experiment
+    }
+
+    static let plexHeartbeatOnlyDefaultsKey = "couchwave_plex_heartbeat_only_v1"
+    var plexHeartbeatOnly: Bool = UserDefaults.standard.bool(forKey: AppState.plexHeartbeatOnlyDefaultsKey) {
+        didSet {
+            UserDefaults.standard.set(plexHeartbeatOnly, forKey: Self.plexHeartbeatOnlyDefaultsKey)
+            if oldValue != plexHeartbeatOnly {
+                if plexHeartbeatOnly { heartbeatTestNotice = nil; syncPlexActivity = false }
+                applyPlaybackReportingPolicy()
+            }
+        }
+    }
+
+    var heartbeatReportingActive: Bool { !isDemoMode && backendKind == .plex && plexHeartbeatOnly }
+
+    func applyPlaybackReportingPolicy() {
+        if !heartbeatReportingActive, let experiment = heartbeatExperiment {
+            heartbeatExperiment = nil
+            heartbeatExperimentServerURL = nil
+            heartbeatExperimentToken = nil
+            Task { await experiment.cancel() }
+        }
+        let enabled = !isDemoMode && (syncPlexActivity || heartbeatReportingActive)
+        let backend: (any MediaBackend)? = enabled ? api(for: playbackTracker?.item.serverID) : nil
+        playbackTracker?.setReporters(
+            plexAPI: heartbeatReportingActive ? heartbeatReporter(for: backend as? PlexAPIService) : backend as? PlexAPIService,
+            watchReporter: syncPlexActivity ? backend as? any WatchActivityReporting : nil,
+            reportingMode: heartbeatReportingActive ? .heartbeatOnly : .history
+        )
     }
 
     /// Resolves the stored `syncPlexActivity` preference. The key is only written once the

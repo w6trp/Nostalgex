@@ -1,5 +1,13 @@
 # Plex live activity without watch-history changes
 
+## Build 47 experiment authorization
+
+The owner explicitly authorized using the existing signed-in profile after being told persistence effects were unverified. The earlier disposable-profile proposal below is retained as the original protocol, not a current blocker. No new Plex account/token or permissions are authorized or needed.
+
+Build 47 adds a distinct experimental heartbeat toggle with no position/duration fields and no scrobble. Its guarded reporter captures stored state before writing, compares every sampled item on later requests and periodic reads, observes the exact app client in current sessions, and turns the toggle off on any changed field/history digest or incomplete verification. The app uses its existing login. History filtering is by sampled item; an administrator may see other profiles' history for that item, so another viewer can cause a conservative stop. Stored metadata fields still use the signed-in profile. Maximum ten minutes/twelve items. It never resets state. The app-local `Documents/couchwave-heartbeat-audit.json` contains aliases, stored-state numbers/digests, session states and outcomes, not tokens, titles, server addresses or account identifiers. Read-only inspection failures are not treated as a pass.
+
+The debug launch argument `-couchwaveHeartbeatOnly` enables the experiment only when an existing Plex login is present; `-couchwaveReportingOff` disables both modes. Ordinary installs remain default off. The Settings toggle also allows stopping the experiment. Code tests passed; real server behavior is not yet established.
+
 ## Current decision
 
 Do not enable the installed History & Resume Sync switch for this requirement. In CouchWave 1.0.25 (46), source `f508c21`, that switch permits `POST /:/timeline` on playback-state changes and at ten-second intervals. It also permits `PUT /:/scrobble` when entry occurred in the first 15% and measured viewing reaches 75% of the item. Omitting scrobble is not a verified way to prevent timeline persistence.

@@ -42,10 +42,23 @@ extension AppState {
         serverURL = Self.normalizePlexServerURL(credentialStore.load(key: "plex_server_url") ?? "")
         token = credentialStore.load(key: "plex_token") ?? ""
 
+
+
         // Backend selection (defaults to Plex for existing installs).
         backendKind = credentialStore.load(key: Self.backendKindKey)
             .flatMap(MediaBackendKind.init(rawValue:)) ?? .plex
         jellyfinUserId = credentialStore.load(key: Self.jellyfinUserIdKey) ?? ""
+        #if DEBUG
+        // Explicit local launch actions used only for the owner-approved beta test.
+        if ProcessInfo.processInfo.arguments.contains("-couchwaveReportingOff") {
+            plexHeartbeatOnly = false
+            syncPlexActivity = false
+        } else if ProcessInfo.processInfo.arguments.contains("-couchwaveHeartbeatOnly"),
+                  backendKind == .plex, !token.isEmpty {
+            syncPlexActivity = false
+            plexHeartbeatOnly = true
+        }
+        #endif
 
         // One-time migration: re-save credentials under AfterFirstUnlock (was ThisDeviceOnly,
         // which doesn't survive device restores or tvOS updates). Harmless if already migrated.

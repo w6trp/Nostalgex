@@ -4,6 +4,31 @@ import XCTest
 @MainActor
 final class PlexActivitySyncTests: XCTestCase {
 
+    func testHeartbeatAndHistoryAreMutuallyExclusive() {
+        let defaults = UserDefaults.standard
+        let keys = [AppState.syncPlexActivityDefaultsKey, AppState.plexHeartbeatOnlyDefaultsKey]
+        let saved = keys.map { defaults.object(forKey: $0) }
+        defer {
+            for (key, value) in zip(keys, saved) {
+                if let value { defaults.set(value, forKey: key) }
+                else { defaults.removeObject(forKey: key) }
+            }
+        }
+        keys.forEach { defaults.removeObject(forKey: $0) }
+        let state = AppState()
+        XCTAssertFalse(state.plexHeartbeatOnly)
+        state.syncPlexActivity = true
+        state.plexHeartbeatOnly = true
+        XCTAssertFalse(state.syncPlexActivity)
+        XCTAssertTrue(state.heartbeatReportingActive)
+        state.syncPlexActivity = true
+        XCTAssertFalse(state.plexHeartbeatOnly)
+        state.plexHeartbeatOnly = true
+        state.backendKind = .jellyfin
+        XCTAssertFalse(state.heartbeatReportingActive)
+        XCTAssertFalse(state.syncPlexActivity)
+    }
+
     // Never-touched installs must land on OFF: channel surfing otherwise floods the
     // household's Plex "Continue Watching" row with programs nobody chose to start.
     func testResolveSyncPlexActivity_defaultsOffWhenNothingStored() {

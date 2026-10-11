@@ -3,8 +3,8 @@ import Foundation
 /// Injectable Plex reporting boundary. Acknowledgement means a successful HTTP response,
 /// not merely that an asynchronous request was launched.
 protocol PlexPlaybackReporting: Sendable {
-    func reportTimeline(ratingKey: String, key: String, state: String, timeMs: Int,
-                        durationMs: Int, sessionID: String) async -> Bool
+    func reportTimeline(ratingKey: String, key: String, state: String, timeMs: Int?,
+                        durationMs: Int?, sessionID: String) async -> Bool
     func scrobble(ratingKey: String) async -> Bool
 }
 
@@ -15,6 +15,8 @@ extension PlexAPIService: PlexPlaybackReporting {}
 @MainActor
 final class PlaybackTracker {
     enum State: String { case playing, buffering, paused, stopped }
+    enum ReportingMode { case history, heartbeatOnly }
+    private var reportingMode: ReportingMode
 
     let sessionID = UUID().uuidString
     let item: PlexMediaItem
@@ -49,12 +51,14 @@ final class PlaybackTracker {
 
     init(item: PlexMediaItem, seekOffset: Int, plexAPI: (any PlexPlaybackReporting)?,
          watchReporter: (any WatchActivityReporting)? = nil,
+         reportingMode: ReportingMode = .history,
          clock: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
          automaticallySchedulesTimer: Bool = true) {
         self.item = item
         self.seekOffset = seekOffset
         self.plexAPI = plexAPI
-        self.watchReporter = watchReporter
+        self.reportingMode = reportingMode
+        self.watchReporter = reportingMode == .heartbeatOnly ? nil : watchReporter
         self.clock = clock
         self.automaticallySchedulesTimer = automaticallySchedulesTimer
         positionSeconds = Double(max(0, seekOffset))
@@ -153,7 +157,8 @@ final class PlaybackTracker {
     /// cancellation and a generation guard prevent queued work from leaking through.
     /// Playback accounting continues independently of the reporting preference.
     func setReporters(plexAPI: (any PlexPlaybackReporting)?,
-                      watchReporter: (any WatchActivityReporting)? = nil) {
+                      watchReporter: (any WatchActivityReporting)? = nil,
+                      reportingMode: ReportingMode = .history) {
         reportGeneration += 1
         reportTask?.cancel()
         reportTask = nil
@@ -161,7 +166,8 @@ final class PlaybackTracker {
         scrobblePending = false
         didStartSession = false
         self.plexAPI = plexAPI
-        self.watchReporter = watchReporter
+        self.reportingMode = reportingMode
+        self.watchReporter = reportingMode == .heartbeatOnly ? nil : watchReporter
         if !stopped, !backgrounded, hasPlaybackSample { sendTimeline(state: state) }
     }
 
@@ -218,16 +224,17 @@ final class PlaybackTracker {
     private func sendTimeline(state: State) {
         // A part's duration is not the movie's duration. With neither exact metadata
         // nor a measured full stack, avoid misleading resume/completion writes.
-        guard !isMultipart || hasReliableWholeItemDuration else { return }
+        guard reportingMode == .heartbeatOnly || !isMultipart || hasReliableWholeItemDuration else { return }
         let t = timeMs
         let d = durationMs
+        let heartbeat = reportingMode == .heartbeatOnly
         let rk = item.ratingKey
         let sid = sessionID
         if let api = plexAPI {
             enqueue { _ = await api.reportTimeline(ratingKey: rk, key: "/library/metadata/\(rk)",
-                                                   state: state.rawValue, timeMs: t, durationMs: d, sessionID: sid) }
+                                                   state: state.rawValue, timeMs: heartbeat ? nil : t, durationMs: heartbeat ? nil : d, sessionID: sid) }
         }
-        guard let reporter = watchReporter else { return }
+        guard !heartbeat, let reporter = watchReporter else { return }
         let source = item.partKey ?? rk
         let generation = reportGeneration
         enqueue { [weak self] in
@@ -247,7 +254,7 @@ final class PlaybackTracker {
     }
 
     private func evaluateAndScrobble() {
-        guard hasReliableWholeItemDuration, eligibleEntry, !scrobbled, !scrobblePending, durationSeconds > 0,
+        guard reportingMode == .history, hasReliableWholeItemDuration, eligibleEntry, !scrobbled, !scrobblePending, durationSeconds > 0,
               clock() >= nextScrobbleAttemptAt,
               activeWatchSeconds / durationSeconds >= 0.75 else { return }
         guard plexAPI != nil || watchReporter != nil else { return }

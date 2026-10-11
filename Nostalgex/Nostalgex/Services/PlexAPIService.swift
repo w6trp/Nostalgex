@@ -1148,16 +1148,20 @@ struct PlexAPIService: MediaBackend {
 
     /// Report current playback position to Plex so Now Playing, On Deck, and watch history stay accurate.
     @discardableResult
-    func reportTimeline(ratingKey: String, key: String, state: String, timeMs: Int, durationMs: Int, sessionID: String) async -> Bool {
-        guard var components = URLComponents(string: "\(serverURL)/:/timeline") else { return false }
-        components.queryItems = [
-            .init(name: "ratingKey", value: ratingKey),
-            .init(name: "key", value: key),
-            .init(name: "state", value: state),
-            .init(name: "time", value: "\(timeMs)"),
-            .init(name: "duration", value: "\(durationMs)"),
-        ]
+    func reportTimeline(ratingKey: String, key: String, state: String, timeMs: Int?, durationMs: Int?, sessionID: String) async -> Bool {
+        guard let components = timelineComponents(ratingKey: ratingKey, key: key, state: state, timeMs: timeMs, durationMs: durationMs) else { return false }
         return await sendPlaybackReport(components: components, method: "POST", sessionID: sessionID)
+    }
+
+    func timelineComponents(ratingKey: String, key: String, state: String, timeMs: Int?, durationMs: Int?) -> URLComponents? {
+        guard var components = URLComponents(string: "\(serverURL)/:/timeline") else { return nil }
+        components.queryItems = [
+            .init(name: "ratingKey", value: ratingKey), .init(name: "key", value: key),
+            .init(name: "state", value: state),
+        ]
+        if let timeMs { components.queryItems?.append(.init(name: "time", value: "\(timeMs)")) }
+        if let durationMs { components.queryItems?.append(.init(name: "duration", value: "\(durationMs)")) }
+        return components
     }
 
     /// Only invoked when the viewer explicitly enables history reporting.
@@ -1171,13 +1175,18 @@ struct PlexAPIService: MediaBackend {
         return await sendPlaybackReport(components: components, method: "PUT")
     }
 
-    private func sendPlaybackReport(components: URLComponents, method: String, sessionID: String? = nil) async -> Bool {
-        guard let url = components.url else { return false }
+    func playbackReportRequest(components: URLComponents, method: String, sessionID: String? = nil) -> URLRequest? {
+        guard let url = components.url else { return nil }
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.timeoutInterval = 10
         if let sessionID { request.setValue(sessionID, forHTTPHeaderField: "X-Plex-Session-Identifier") }
         baseHeaders.forEach { request.setValue($1, forHTTPHeaderField: $0) }
+        return request
+    }
+
+    private func sendPlaybackReport(components: URLComponents, method: String, sessionID: String? = nil) async -> Bool {
+        guard let request = playbackReportRequest(components: components, method: method, sessionID: sessionID) else { return false }
         do {
             let (_, response) = try await Self.session.data(for: request)
             guard let http = response as? HTTPURLResponse else { return false }

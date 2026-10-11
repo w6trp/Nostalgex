@@ -3,6 +3,18 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-10-11 (approved heartbeat beta)
+
+**Shipped.** CouchWave 1.0.25 (47) is signed, installed and launched on the paired tvOS 27 device. The owner explicitly approved a heartbeat-only experiment with the existing Plex profile, superseding the earlier isolation requirement. The launch requests heartbeat mode only; observed server effects are still pending.
+
+**Changed.** Added a separate Plex-only experimental setting that disables history/resume sync, omits timeline position and duration, and never calls watched/scrobble reporting. The existing profile token is used inside the app without extracting it. The experiment snapshots stored item fields and history before a report, compares all sampled items during and after playback, checks current sessions, and stops reporting on mutation or failed verification. It is bounded to ten minutes and twelve titles. A changed server/profile stops the experiment. Read-only history fingerprints conservatively cover every visible history row for each sampled item, so another user's play of that same item may also stop the test. Sanitized observations stay in the app Documents directory, outside source control.
+
+**Validation.** Native suite passed 471 tests with 2 optional live harnesses skipped. Tests exercise field omission in the actual request builder, no scrobble after completion, mutually exclusive policies, failed-baseline refusal and automatic shutdown after mutation. Signed build and strict codesign verification passed; build 47 installation and launch were verified.
+
+**Half-done.** Owner-driven playback and audit collection remain in progress. This is not a no-history guarantee. No history is deleted, restored or reset; no new Plex profile, token or permission was created.
+
+**Next.** Collect the bounded test's audit and compare live visibility with persisted state; keep heartbeat off if any mutation or verification failure is detected.
+
 ## 2026-10-11 (Plex activity verification preparation)
 
 **Shipped.** No replacement app installed and no reporting preference changed. The physical device remains on CouchWave 1.0.25 (46), source `f508c21` with local signing configuration.
