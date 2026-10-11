@@ -1,255 +1,278 @@
 import Foundation
 
-/// Tracks a single playback session for one item on one channel.
-/// Reports to Plex (timeline + scrobble) or to Jellyfin/Emby (session + play count).
-/// With neither reporter, it only accumulates watch time for analytics.
-///
-/// Scrobble rule (hybrid gate), same on every server:
-///   1. Entry gate — tuned in during the first 15% of the program
-///   2. Active time — accumulated ≥ 75% of total runtime while this tracker is active
-/// Both gates must pass. The count increments as soon as the threshold is crossed or on stop.
+/// Injectable Plex reporting boundary. Acknowledgement means a successful HTTP response,
+/// not merely that an asynchronous request was launched.
+protocol PlexPlaybackReporting: Sendable {
+    func reportTimeline(ratingKey: String, key: String, state: String, timeMs: Int,
+                        durationMs: Int, sessionID: String) async -> Bool
+    func scrobble(ratingKey: String) async -> Bool
+}
+
+extension PlexAPIService: PlexPlaybackReporting {}
+
+/// One logical viewing session. Playback samples own the position/watch clock; the
+/// reporting timer only sends the most recent sample. All writes are ordered.
 @MainActor
 final class PlaybackTracker {
-
-    // MARK: - Identity
+    enum State: String { case playing, buffering, paused, stopped }
 
     let sessionID = UUID().uuidString
     let item: PlexMediaItem
-    /// Seconds into the program when the user tuned in.
     let seekOffset: Int
-
-    // MARK: - Entry gate
-
-    /// True if the user tuned in during the first 15% of the program.
-    let eligibleEntry: Bool
-
-    // MARK: - Watch clock
+    private(set) var eligibleEntry: Bool
+    private(set) var scrobbled = false
 
     private var activeWatchSeconds: Double = 0
-    /// Independent accumulator drained by `flushWatchSecondsForAnalytics`. Kept
-    /// separate from `activeWatchSeconds` so draining it for a `playback.stopped`
-    /// analytics signal doesn't reset the scrobble threshold ( ≥ 75% of runtime ).
     private var analyticsWatchSeconds: Double = 0
-    private var watchStart: Date? = nil
-
-    // MARK: - State
-
-    private(set) var scrobbled = false
+    private var lastSampleTime: TimeInterval?
+    private var positionSeconds: Double
+    private var durationSeconds: Double
+    private let isMultipart: Bool
+    private var hasReliableWholeItemDuration: Bool
+    private var state: State = .buffering
     private var stopped = false
-    /// Jellyfin/Emby need a Playing call before Progress. Reset when a stop closes the session.
+    private var isReady = false
+    private var nextScrobbleAttemptAt: TimeInterval = 0
+    private var backgrounded = false
+    private var hasPlaybackSample = false
     private var didStartSession = false
-
-    // MARK: - 10-second timeline pulse
-
+    private var scrobblePending = false
     private var timelineTimer: Timer?
+    private let clock: () -> TimeInterval
+    private let automaticallySchedulesTimer: Bool
 
-    // MARK: - Server reporting (nil = reporting off, or demo)
+    private var plexAPI: (any PlexPlaybackReporting)?
+    private var watchReporter: (any WatchActivityReporting)?
+    private var reportQueue: [() async -> Void] = []
+    private var reportTask: Task<Void, Never>?
+    private var reportGeneration = 0
 
-    private let plexAPI: PlexAPIService?
-    private let watchReporter: (any WatchActivityReporting)?
-
-    // MARK: - Init
-
-    init(
-        item: PlexMediaItem,
-        seekOffset: Int,
-        plexAPI: PlexAPIService?,
-        watchReporter: (any WatchActivityReporting)? = nil
-    ) {
+    init(item: PlexMediaItem, seekOffset: Int, plexAPI: (any PlexPlaybackReporting)?,
+         watchReporter: (any WatchActivityReporting)? = nil,
+         clock: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+         automaticallySchedulesTimer: Bool = true) {
         self.item = item
         self.seekOffset = seekOffset
         self.plexAPI = plexAPI
         self.watchReporter = watchReporter
-
-        let totalSec = Double(item.duration * 60)
-        let entryFrac = totalSec > 0 ? Double(seekOffset) / totalSec : 1.0
-        self.eligibleEntry = entryFrac <= 0.15
-
-        print("[Tracker] \(sessionID.prefix(8)) START \"\(item.title)\" offset=\(seekOffset)s eligible=\(eligibleEntry)")
+        self.clock = clock
+        self.automaticallySchedulesTimer = automaticallySchedulesTimer
+        positionSeconds = Double(max(0, seekOffset))
+        let exactDuration = item.exactDurationSeconds.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
+        durationSeconds = exactDuration ?? Double(item.duration * 60)
+        isMultipart = !(item.additionalPartKeys ?? []).isEmpty
+        hasReliableWholeItemDuration = exactDuration != nil || (item.additionalPartKeys ?? []).isEmpty
+        eligibleEntry = durationSeconds > 0 && Double(seekOffset) / durationSeconds <= 0.15
     }
 
-    deinit {
-        timelineTimer?.invalidate()
-    }
+    deinit { timelineTimer?.invalidate() }
 
-    // MARK: - Lifecycle hooks
-
-    /// Call when AVPlayer becomes .readyToPlay and begins playing.
-    /// Idempotent — safe to call from retry / transcode-fallback paths for the same item.
+    /// Ready is not proof of playback: play() may still be waiting for data.
     func onPlaybackReady() {
-        guard !stopped else { return }
-        if watchStart == nil {
-            watchStart = Date()
-        }
-        if timelineTimer == nil {
-            scheduleTimeline()
-        }
-        sendTimeline(state: "playing")
+        guard !stopped, !backgrounded else { return }
+        isReady = true
+        lastSampleTime = nil
+        scheduleTimelineIfNeeded()
     }
 
-    /// Call when the app enters the background.
-    func onBackground() {
+    /// A new player/seek/fallback attempt cannot yet supply a valid source position.
+    func onPlaybackPreparing() {
         guard !stopped else { return }
-        accumulateTime()
-        sendTimeline(state: "stopped")
-        didStartSession = false
+        isReady = false
+        lastSampleTime = nil
+        if hasPlaybackSample, !backgrounded {
+            state = .buffering
+            sendTimeline(state: .buffering)
+        }
+    }
+
+    /// Supply AVPlayer source time (including any HLS base offset), not the schedule
+    /// clock. A frozen playhead never earns watch time, even if AVPlayer says playing.
+    func onPlaybackUpdate(positionSeconds newPosition: Double, state newState: State,
+                          durationSeconds actualDuration: Double? = nil,
+                          durationIsWholeItem: Bool = false) {
+        guard !stopped, !backgrounded, isReady, newPosition.isFinite else { return }
+        let now = clock()
+        let position = max(0, newPosition)
+        if let previous = lastSampleTime, state == .playing {
+            let elapsed = max(0, now - previous)
+            let progress = max(0, position - positionSeconds)
+            // A seek forward is not time watched. Negative/zero progress is no watch.
+            let watched = min(elapsed, progress)
+            activeWatchSeconds += watched
+            analyticsWatchSeconds += watched
+        }
+        let hadReliableDuration = hasReliableWholeItemDuration
+        if let duration = actualDuration, duration.isFinite, duration > 0,
+           !isMultipart || durationIsWholeItem {
+            hasReliableWholeItemDuration = true
+            durationSeconds = duration
+            eligibleEntry = Double(seekOffset) / duration <= 0.15
+        }
+        let changed = !hasPlaybackSample || newState != state
+            || (!hadReliableDuration && hasReliableWholeItemDuration)
+        positionSeconds = position
+        state = newState
+        lastSampleTime = now
+        hasPlaybackSample = true
+        scheduleTimelineIfNeeded()
+        if changed { sendTimeline(state: newState) }
+        evaluateAndScrobble()
+    }
+
+    func onBackground() {
+        guard !stopped, !backgrounded else { return }
+        backgrounded = true
+        if hasPlaybackSample { sendTimeline(state: .stopped) }
+        lastSampleTime = nil
+        state = .buffering
         timelineTimer?.invalidate()
         timelineTimer = nil
     }
 
-    /// Call when the app returns to the foreground.
+    /// Wait for a fresh player sample rather than resurrecting an old playing state.
     func onForeground() {
         guard !stopped else { return }
-        watchStart = Date()
-        scheduleTimeline()
-        sendTimeline(state: "playing")
+        backgrounded = false
+        lastSampleTime = nil
+        hasPlaybackSample = false
     }
 
-    /// Finalize the session: flush accumulated time, send stopped, evaluate scrobble.
-    /// Called before advancing, channel change, or disconnect.
     func stop() {
         guard !stopped else { return }
         stopped = true
         timelineTimer?.invalidate()
         timelineTimer = nil
-        accumulateTime()
-        sendTimeline(state: "stopped")
+        if hasPlaybackSample, !backgrounded { sendTimeline(state: .stopped) }
         evaluateAndScrobble()
-        print("[Tracker] \(sessionID.prefix(8)) STOP \"\(item.title)\" watched=\(Int(activeWatchSeconds))s scrobbled=\(scrobbled)")
+        lastSampleTime = nil
+        state = .stopped
     }
 
-    /// Tear down without reporting anything. Used when the user turns off Plex activity
-    /// sync mid-program: clears the pulse timer so no further timeline/scrobble fires and,
-    /// unlike `stop()`, sends no final "stopped" report — so no view-offset is written and
-    /// the item never lands in Continue Watching.
+    /// Disable future writes immediately. In-flight writes cannot be recalled, but
+    /// cancellation and a generation guard prevent queued work from leaking through.
+    /// Playback accounting continues independently of the reporting preference.
+    func setReporters(plexAPI: (any PlexPlaybackReporting)?,
+                      watchReporter: (any WatchActivityReporting)? = nil) {
+        reportGeneration += 1
+        reportTask?.cancel()
+        reportTask = nil
+        reportQueue.removeAll()
+        scrobblePending = false
+        didStartSession = false
+        self.plexAPI = plexAPI
+        self.watchReporter = watchReporter
+        if !stopped, !backgrounded, hasPlaybackSample { sendTimeline(state: state) }
+    }
+
+    /// Kept for callers that need complete teardown without a final server write.
     func abandon() {
-        guard !stopped else { return }
+        setReporters(plexAPI: nil)
         stopped = true
         timelineTimer?.invalidate()
         timelineTimer = nil
+        lastSampleTime = nil
     }
 
-    /// Return the accumulated active watch time and reset the counter so the next
-    /// `playback.stopped` analytics signal doesn't double-count. Independent of the
-    /// Plex scrobble path (which needs the running total until `stop()`), so this is
-    /// called by AppState in every backend, including Jellyfin/Emby/demo.
-    ///
-    /// Safe to call while the session is still running: the split second between the
-    /// last accumulation and now is folded in, and a fresh accumulation window opens
-    /// for whatever comes next.
     func flushWatchSecondsForAnalytics() -> Double {
-        if let start = watchStart {
-            let delta = Date().timeIntervalSince(start)
-            activeWatchSeconds += delta
-            analyticsWatchSeconds += delta
-            // Keep accumulating from now if the session is still live; otherwise leave
-            // it nil so nothing is added after a stop.
-            watchStart = stopped ? nil : Date()
-        }
-        let out = analyticsWatchSeconds
+        let seconds = analyticsWatchSeconds
         analyticsWatchSeconds = 0
-        return out
+        return seconds
     }
 
-    // MARK: - Private
-
-    private func accumulateTime() {
-        guard let start = watchStart else { return }
-        let delta = Date().timeIntervalSince(start)
-        activeWatchSeconds += delta
-        analyticsWatchSeconds += delta
-        watchStart = nil
-    }
-
-    private func scheduleTimeline() {
-        timelineTimer?.invalidate()
-        timelineTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
+    private func scheduleTimelineIfNeeded() {
+        guard automaticallySchedulesTimer, timelineTimer == nil else { return }
+        let timer = Timer(timeInterval: 10, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.onTimelineTick() }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        timelineTimer = timer
     }
 
-    private func onTimelineTick() {
-        guard !stopped else {
-            timelineTimer?.invalidate()
-            return
-        }
-        // accumulateTime folds elapsed since watchStart into BOTH counters (scrobble
-        // and analytics). Resetting watchStart keeps the next tick's delta clean.
-        accumulateTime()
-        watchStart = Date()
-        let timeMs = (seekOffset * 1000) + Int(activeWatchSeconds * 1000)
-        let durationMs = item.duration * 60 * 1000
-        sendTimeline(state: "playing", timeMs: timeMs, durationMs: durationMs)
+    /// Internal so tests can pulse deterministically without sleeping or a run loop.
+    func onTimelineTick() {
+        guard !stopped, !backgrounded, hasPlaybackSample else { return }
+        sendTimeline(state: state)
         evaluateAndScrobble()
     }
 
-    private func currentTimeMs() -> Int {
-        (seekOffset * 1000) + Int(activeWatchSeconds * 1000)
+    func waitForPendingReports() async { await reportTask?.value }
+
+    private func enqueue(_ operation: @escaping () async -> Void) {
+        reportQueue.append(operation)
+        guard reportTask == nil else { return }
+        let generation = reportGeneration
+        reportTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            while !Task.isCancelled, self.reportGeneration == generation, !self.reportQueue.isEmpty {
+                let operation = self.reportQueue.removeFirst()
+                await operation()
+            }
+            if self.reportGeneration == generation { self.reportTask = nil }
+        }
     }
 
-    private func sendTimeline(state: String, timeMs: Int? = nil, durationMs: Int? = nil) {
-        let t = timeMs ?? currentTimeMs()
-        let d = durationMs ?? (item.duration * 60 * 1000)
+    private var timeMs: Int { Int(min(positionSeconds, Double(Int.max / 1000)) * 1000) }
+    private var durationMs: Int { Int(min(durationSeconds, Double(Int.max / 1000)) * 1000) }
+
+    private func sendTimeline(state: State) {
+        // A part's duration is not the movie's duration. With neither exact metadata
+        // nor a measured full stack, avoid misleading resume/completion writes.
+        guard !isMultipart || hasReliableWholeItemDuration else { return }
+        let t = timeMs
+        let d = durationMs
+        let rk = item.ratingKey
+        let sid = sessionID
         if let api = plexAPI {
-            let rk = item.ratingKey
-            let key = "/library/metadata/\(rk)"
-            let sid = sessionID
-            Task.detached {
-                await api.reportTimeline(ratingKey: rk, key: key, state: state, timeMs: t, durationMs: d, sessionID: sid)
-            }
+            enqueue { _ = await api.reportTimeline(ratingKey: rk, key: "/library/metadata/\(rk)",
+                                                   state: state.rawValue, timeMs: t, durationMs: d, sessionID: sid) }
         }
         guard let reporter = watchReporter else { return }
-        if state == "stopped", !didStartSession { return }
-        let event: MediaServerPlaybackReport.Event
-        if state == "stopped" {
-            event = .stopped
-        } else if didStartSession {
-            event = .progress
-        } else {
-            event = .started
-            didStartSession = true
+        let source = item.partKey ?? rk
+        let generation = reportGeneration
+        enqueue { [weak self] in
+            guard let self, self.reportGeneration == generation else { return }
+            if state == .stopped, !self.didStartSession { return }
+            let event: MediaServerPlaybackReport.Event = state == .stopped ? .stopped
+                : (self.didStartSession ? .progress : .started)
+            var ticks = t * 10_000
+            if event == .stopped, self.scrobbled, d > 0 {
+                ticks = min(ticks, Int(Double(d) * 10_000 * 0.89))
+            }
+            let acknowledged = await reporter.reportWatchActivity(itemId: rk, mediaSourceId: source,
+                playSessionId: sid, positionTicks: ticks, event: event, isPaused: state == .paused)
+            guard self.reportGeneration == generation else { return }
+            if acknowledged { self.didStartSession = state != .stopped }
         }
-        let ticks = reportedTicks(actual: t * 10_000, event: event)
-        let itemId = item.ratingKey
-        let mediaSourceId = item.partKey ?? item.ratingKey
-        let sid = sessionID
-        Task.detached {
-            await reporter.reportWatchActivity(
-                itemId: itemId,
-                mediaSourceId: mediaSourceId,
-                playSessionId: sid,
-                positionTicks: ticks,
-                event: event
-            )
-        }
-    }
-
-    /// Jellyfin and Emby count a play when a stop lands at about 90% of the runtime.
-    /// Once this session already counted the watch, later stops stay under that line
-    /// so the same viewing is not counted twice.
-    private func reportedTicks(actual: Int, event: MediaServerPlaybackReport.Event) -> Int {
-        guard event == .stopped, scrobbled, watchReporter != nil else { return actual }
-        let durationTicks = item.duration * 60 * 10_000_000
-        guard durationTicks > 0 else { return actual }
-        return min(actual, Int(Double(durationTicks) * 0.89))
     }
 
     private func evaluateAndScrobble() {
-        guard eligibleEntry, !scrobbled else { return }
-        let totalSec = Double(item.duration * 60)
-        guard totalSec > 0, activeWatchSeconds / totalSec >= 0.75 else { return }
-        scrobbled = true
-        print("[Tracker] \(sessionID.prefix(8)) SCROBBLE \"\(item.title)\" rk=\(item.ratingKey)")
+        guard hasReliableWholeItemDuration, eligibleEntry, !scrobbled, !scrobblePending, durationSeconds > 0,
+              clock() >= nextScrobbleAttemptAt,
+              activeWatchSeconds / durationSeconds >= 0.75 else { return }
+        guard plexAPI != nil || watchReporter != nil else { return }
+        let generation = reportGeneration
+        let rk = item.ratingKey
         if let api = plexAPI {
-            let rk = item.ratingKey
-            Task.detached { await api.scrobble(ratingKey: rk) }
-        }
-        if let reporter = watchReporter {
-            let fraction = Double(currentTimeMs()) / (totalSec * 1000)
-            // At or past the server's own completion line, the stop report counts it.
-            guard fraction < 0.9 else { return }
-            let itemId = item.ratingKey
-            Task.detached { await reporter.markWatched(itemId: itemId) }
+            scrobblePending = true
+            enqueue { [weak self] in
+                let acknowledged = await api.scrobble(ratingKey: rk)
+                guard let self, self.reportGeneration == generation else { return }
+                self.scrobbled = acknowledged
+                self.scrobblePending = false
+                if !acknowledged { self.nextScrobbleAttemptAt = self.clock() + 10 }
+            }
+        } else if let reporter = watchReporter {
+            // A near-complete stopped report itself counts the watch on these servers.
+            guard positionSeconds / durationSeconds < 0.9 else { return }
+            scrobblePending = true
+            enqueue { [weak self] in
+                let acknowledged = await reporter.markWatched(itemId: rk)
+                guard let self, self.reportGeneration == generation else { return }
+                self.scrobbled = acknowledged
+                self.scrobblePending = false
+                if !acknowledged { self.nextScrobbleAttemptAt = self.clock() + 10 }
+            }
         }
     }
 }

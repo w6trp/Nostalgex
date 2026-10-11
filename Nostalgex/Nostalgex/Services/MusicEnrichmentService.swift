@@ -14,12 +14,12 @@ final class MusicEnrichmentService {
 
     private let musicBrainz = MusicBrainzService()
     private let deezer = DeezerService()
-    private let cacheFileName = "music_video_enrichments.json"
+    private let cacheFileName = "music_video_enrichments_v2.json"
 
     // MARK: - Public API
 
     func enrichment(for item: PlexMediaItem) -> MusicVideoEnrichment? {
-        cache[item.ratingKey]
+        cache[item.id]
     }
 
     /// Plex-only genres are often just "Music Video" — treat as thin metadata.
@@ -48,8 +48,8 @@ final class MusicEnrichmentService {
         var work: [PlexMediaItem] = []
         var genrePass: [PlexMediaItem] = []
         for item in candidates {
-            if let cached = cache[item.ratingKey], Self.isSettled(cached) { continue }
-            if let cached = cache[item.ratingKey], Self.needsOnlyGenres(cached) { genrePass.append(item); continue }
+            if let cached = cache[item.id], Self.isSettled(cached) { continue }
+            if let cached = cache[item.id], Self.needsOnlyGenres(cached) { genrePass.append(item); continue }
             work.append(item)
         }
 
@@ -63,8 +63,9 @@ final class MusicEnrichmentService {
             print("[MusicEnrichment] Genre pass for \(genrePass.count) cached music videos via Deezer")
             var touched = false
             for (index, item) in genrePass.enumerated() {
-                if let cached = cache[item.ratingKey] {
-                    cache[item.ratingKey] = await withDeezerGenres(cached, item: item)
+                guard !Task.isCancelled else { isEnriching = false; return }
+                if let cached = cache[item.id] {
+                    cache[item.id] = await withDeezerGenres(cached, item: item)
                     touched = true
                 }
                 enrichedCount = index + 1
@@ -91,8 +92,9 @@ final class MusicEnrichmentService {
 
         var updated = false
         for (index, item) in work.enumerated() {
+            guard !Task.isCancelled else { isEnriching = false; return }
             if let row = await resolve(item) {
-                cache[item.ratingKey] = row
+                cache[item.id] = row
                 updated = true
             }
             enrichedCount = index + 1
@@ -211,17 +213,17 @@ final class MusicEnrichmentService {
     /// Apply cached MusicBrainz rows onto Plex items for UI and schedules.
     func itemsWithDisplayMetadata(_ items: [PlexMediaItem]) -> [PlexMediaItem] {
         items.map { item in
-            guard let music = cache[item.ratingKey] else { return item.applyingTrustedMusicYear() }
+            guard item.librarySource == .musicVideo, let music = cache[item.id] else { return item.applyingTrustedMusicYear() }
             return item.applyingMusicEnrichment(music)
         }
     }
 
     /// Refresh channel pools so schedule entries show enriched titles/artists.
     func refreshChannelPools(_ channels: [Channel], from items: [PlexMediaItem]) -> [Channel] {
-        let byKey = Dictionary(items.map { ($0.ratingKey, $0) }, uniquingKeysWith: { first, _ in first })
+        let byKey = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         return channels.map { ch in
             var copy = ch
-            copy.itemPool = ch.itemPool.map { byKey[$0.ratingKey] ?? $0 }
+            copy.itemPool = ch.itemPool.map { byKey[$0.id] ?? $0 }
             return copy
         }
     }

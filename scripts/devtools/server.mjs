@@ -10,6 +10,7 @@
 //   PORT=3030
 
 import { createServer } from "node:http";
+import { accessPolicy, allowedRequest } from "./lib/access.mjs";
 import { readFile, stat } from "node:fs/promises";
 import { extname, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,6 +26,7 @@ import { coverageFromSnapshot } from "./lib/coverage.mjs";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = join(__dirname, "public");
 const PORT = Number(process.env.PORT || 3030);
+const access = accessPolicy();
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -447,6 +449,11 @@ async function routeAPI(req, res, url) {
 
 // ---- Boot ----------------------------------------------------------------
 const server = createServer(async (req, res) => {
+  if (!allowedRequest(req, access)) {
+    res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="Nostalgex devtools"', 'Cache-Control': 'no-store' });
+    res.end('Authentication required');
+    return;
+  }
   const url = new URL(req.url, "http://localhost");
   try {
     if (url.pathname.startsWith("/api/")) {
@@ -461,10 +468,10 @@ const server = createServer(async (req, res) => {
 });
 
 await loadSnapshotFromDisk();
-server.listen(PORT, () => {
+server.listen(PORT, access.host, () => {
   const sum = snapshotSummary();
   console.log("");
-  console.log(`  Nostalgex devtools running:  http://localhost:${PORT}`);
+  console.log(`  Nostalgex devtools running:  http://${access.host}:${PORT}`);
   console.log(`  Plex:      ${plexConfigured ? plexHost : "not connected (channels browseable; schedule/pool need snapshot or Plex)"}`);
   console.log(`  Snapshot:  ${sum ? `${sum.totalChannels} channels from ${sum.deviceName} (saved ${new Date(sum.savedAt * 1000).toLocaleString()})` : "none"}`);
   console.log("");

@@ -122,4 +122,9 @@ enum StreamQuality: String, CaseIterable, Identifiable, Sendable {
     /// same request came back as 1-second segments and ran 75 seconds of content in 75
     /// seconds. Quality stepping is the app's own job now (PlaybackStarvation).
     var allowsAutoAdjust: Bool { false }
+
+    /// Compatibility recovery must never raise the viewer's bandwidth or resolution limit.
+    var cappedRecoveryQuality: StreamQuality {
+        maxBitrateKbps < StreamQuality.high.maxBitrateKbps ? self : .high
+    }
 }

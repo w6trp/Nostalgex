@@ -65,6 +65,7 @@ final class VersionPickerTests: XCTestCase {
         let best = try XCTUnwrap(item.bestMedia)
         XCTAssertEqual(best.Part?.first?.key, "/4k")
         XCTAssertEqual(best.bitrate, 12000)
+        XCTAssertEqual(item.bestMediaIndex, 1)
     }
 
     func testPlexTieBreaksByResolution() throws {

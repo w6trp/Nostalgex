@@ -13,7 +13,7 @@ private actor OMDBRateLimitFlag {
 @MainActor
 class EnrichmentService {
 
-    // In-memory cache: tmdbID -> MediaEnrichment (TMDB + optional OMDb merged)
+    // In-memory cache: mediaType:tmdbID -> MediaEnrichment (TMDB + optional OMDb merged)
     private(set) var cache: [String: MediaEnrichment] = [:]
 
     // Progress tracking
@@ -27,7 +27,8 @@ class EnrichmentService {
     private let omdb = OMDBService(apiKey: TMDBConfig.omdbAPIKey)
     private let supabase = SupabaseService(
         projectURL: TMDBConfig.supabaseURL,
-        anonKey: TMDBConfig.supabaseAnonKey
+        anonKey: TMDBConfig.supabaseAnonKey,
+        tableName: TMDBConfig.supabaseV2Table
     )
 
     // MARK: - Public API
@@ -35,13 +36,13 @@ class EnrichmentService {
     /// Look up enrichment data for a media item
     func enrichment(for item: PlexMediaItem) -> MediaEnrichment? {
         guard let tmdbID = item.tmdbID else { return nil }
-        return cache[tmdbID]
+        return cache[MediaEnrichment.cacheKey(mediaType: item.type == .episode ? "tv" : "movie", tmdbID: tmdbID)]
     }
 
     /// Enrich all items in the library. Runs in background, updates progress.
     func enrichItems(_ items: [PlexMediaItem]) async {
-        guard !TMDBConfig.tmdbAPIKey.isEmpty,
-              !TMDBConfig.supabaseURL.isEmpty else {
+        loadDiskCache()
+        guard !TMDBConfig.tmdbAPIKey.isEmpty else {
             print("[Enrichment] Skipping: API keys not configured")
             return
         }
@@ -58,13 +59,14 @@ class EnrichmentService {
         for item in items {
             guard let tmdbID = item.tmdbID else { continue }
             let mediaType = item.type == .episode ? "tv" : "movie"
-            if let existing = workItemsByTMDB[tmdbID] {
+            let key = MediaEnrichment.cacheKey(mediaType: mediaType, tmdbID: tmdbID)
+            if let existing = workItemsByTMDB[key] {
                 // Fill in missing IMDb ID if a later item has one
                 if existing.imdbID == nil, let imdb = item.imdbID {
-                    workItemsByTMDB[tmdbID] = WorkItem(tmdbID: tmdbID, imdbID: imdb, mediaType: existing.mediaType)
+                    workItemsByTMDB[key] = WorkItem(tmdbID: tmdbID, imdbID: imdb, mediaType: existing.mediaType)
                 }
             } else {
-                workItemsByTMDB[tmdbID] = WorkItem(tmdbID: tmdbID, imdbID: item.imdbID, mediaType: mediaType)
+                workItemsByTMDB[key] = WorkItem(tmdbID: tmdbID, imdbID: item.imdbID, mediaType: mediaType)
             }
         }
 
@@ -81,17 +83,18 @@ class EnrichmentService {
 
         // Step 2: Check Supabase cache
         statusMessage = "Checking metadata cache"
-        let allIDs = Array(workItemsByTMDB.keys)
-        var cached: [MediaEnrichment] = []
+        let allIDs = Array(Set(workItemsByTMDB.values.map(\.tmdbID)))
+        var cached = workItemsByTMDB.keys.compactMap { cache[$0] }
         do {
-            cached = try await supabase.fetchEnrichments(tmdbIDs: allIDs) { done, total in
+            let remote = try await supabase.fetchEnrichments(tmdbIDs: allIDs) { [weak self] done, total in
                 guard total > 1 else { return }
                 Task { @MainActor [weak self] in
                     self?.statusMessage = "Checking metadata cache \(done)/\(total)"
                 }
             }
+            cached.append(contentsOf: remote.filter { workItemsByTMDB[$0.cacheKey] != nil })
             for enrichment in cached {
-                cache[enrichment.tmdbID] = enrichment
+                cache[enrichment.cacheKey] = enrichment
             }
             let withOMDBCached = cached.filter { $0.imdbRating != nil }.count
             print("[Enrichment] \(cached.count)/\(total) cached in Supabase (\(withOMDBCached) with OMDb)")
@@ -103,15 +106,15 @@ class EnrichmentService {
         // Three buckets:
         //   needsBoth: no TMDB cache row at all
         //   needsOMDBOnly: has TMDB cache row, has imdbID, but no imdbRating yet
-        let cachedByID = Dictionary(cached.map { ($0.tmdbID, $0) }, uniquingKeysWith: { first, _ in first })
+        let cachedByID = Dictionary(cached.map { ($0.cacheKey, $0) }, uniquingKeysWith: { first, _ in first })
 
         var needsBoth: [WorkItem] = []
         var needsOMDBOnly: [(tmdbID: String, imdbID: String, existing: MediaEnrichment)] = []
 
-        for (tmdbID, work) in workItemsByTMDB {
-            if let existing = cachedByID[tmdbID] {
+        for (key, work) in workItemsByTMDB {
+            if let existing = cachedByID[key] {
                 if omdbEnabled, existing.imdbRating == nil, let imdbID = work.imdbID ?? existing.imdbID {
-                    needsOMDBOnly.append((tmdbID, imdbID, existing))
+                    needsOMDBOnly.append((work.tmdbID, imdbID, existing))
                 }
             } else {
                 needsBoth.append(work)
@@ -126,6 +129,7 @@ class EnrichmentService {
             statusMessage = ""
             progress = 1
             isEnriching = false
+            saveDiskCache()
             return
         }
 
@@ -200,7 +204,7 @@ class EnrichmentService {
             for await result in group {
                 if let enrichment = result {
                     newEnrichments.append(enrichment)
-                    cache[enrichment.tmdbID] = enrichment
+                    cache[enrichment.cacheKey] = enrichment
                 }
                 pendingCount += 1
 
@@ -267,7 +271,7 @@ class EnrichmentService {
                 for await result in group {
                     if let enrichment = result {
                         newEnrichments.append(enrichment)
-                        cache[enrichment.tmdbID] = enrichment
+                        cache[enrichment.cacheKey] = enrichment
                     }
                     pendingCount += 1
 
@@ -291,7 +295,9 @@ class EnrichmentService {
             }
         }
 
-        // Step 5: Persist to Supabase
+        saveDiskCache()
+
+        // Step 5: Persist to the explicitly configured fork-owned cache
         if !newEnrichments.isEmpty {
             statusMessage = "Saving metadata cache"
             do {
@@ -309,4 +315,19 @@ class EnrichmentService {
         progress = 1
         isEnriching = false
     }
+    private var cacheURL: URL? {
+        LocalStore.rootDirectory?.appendingPathComponent("media_enrichments_v2.json")
+    }
+
+    private func loadDiskCache() {
+        guard let url = cacheURL, let data = try? Data(contentsOf: url),
+              let rows = try? JSONDecoder().decode([MediaEnrichment].self, from: data) else { return }
+        for row in rows { cache[row.cacheKey] = row }
+    }
+
+    private func saveDiskCache() {
+        guard let url = cacheURL, let data = try? JSONEncoder().encode(Array(cache.values)) else { return }
+        try? data.write(to: url, options: .atomic)
+    }
+
 }

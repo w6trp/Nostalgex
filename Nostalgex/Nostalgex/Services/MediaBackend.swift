@@ -141,42 +141,52 @@ enum MediaServerPlaybackReport {
         return URLSession(configuration: config)
     }()
 
-    static func post(
-        serverURL: String,
-        authorization: String,
-        event: Event,
-        itemId: String,
-        mediaSourceId: String,
-        playSessionId: String,
-        positionTicks: Int
-    ) async {
-        guard let url = URL(string: "\(serverURL)\(event.path)") else { return }
+    static func request(
+        serverURL: String, authorization: String, event: Event, itemId: String,
+        mediaSourceId: String, playSessionId: String, positionTicks: Int, isPaused: Bool
+    ) -> URLRequest? {
+        guard let url = URL(string: "\(serverURL)\(event.path)") else { return nil }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue(authorization, forHTTPHeaderField: "Authorization")
         req.httpBody = try? JSONEncoder().encode(Body(
-            ItemId: itemId,
-            PlaySessionId: playSessionId,
-            MediaSourceId: mediaSourceId,
-            PositionTicks: positionTicks,
-            IsPaused: false
+            ItemId: itemId, PlaySessionId: playSessionId, MediaSourceId: mediaSourceId,
+            PositionTicks: positionTicks, IsPaused: isPaused
         ))
-        _ = try? await session.data(for: req)
+        return req
+    }
+
+    static func post(
+        serverURL: String, authorization: String, event: Event, itemId: String,
+        mediaSourceId: String, playSessionId: String, positionTicks: Int, isPaused: Bool
+    ) async -> Bool {
+        guard let req = request(serverURL: serverURL, authorization: authorization, event: event,
+                                itemId: itemId, mediaSourceId: mediaSourceId, playSessionId: playSessionId,
+                                positionTicks: positionTicks, isPaused: isPaused) else { return false }
+        return await acknowledged(req)
+    }
+
+    private static func acknowledged(_ request: URLRequest) async -> Bool {
+        do {
+            let (_, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse else { return false }
+            return (200..<300).contains(http.statusCode)
+        } catch { return false }
     }
 
     /// One increment, matching a Plex scrobble. Used when the watch cleared the
     /// 75% gate but the stop position is still short of the server's own
     /// "finished" threshold, which would otherwise not count it.
-    static func markPlayed(serverURL: String, authorization: String, userId: String, itemId: String) async {
+    static func markPlayed(serverURL: String, authorization: String, userId: String, itemId: String) async -> Bool {
         guard let itemPath = itemId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
               let userPath = userId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
-              let url = URL(string: "\(serverURL)/Users/\(userPath)/PlayedItems/\(itemPath)") else { return }
+              let url = URL(string: "\(serverURL)/Users/\(userPath)/PlayedItems/\(itemPath)") else { return false }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue(authorization, forHTTPHeaderField: "Authorization")
-        _ = try? await session.data(for: req)
+        return await acknowledged(req)
     }
 }
 
@@ -186,10 +196,11 @@ protocol WatchActivityReporting: Sendable {
         mediaSourceId: String,
         playSessionId: String,
         positionTicks: Int,
-        event: MediaServerPlaybackReport.Event
-    ) async
+        event: MediaServerPlaybackReport.Event,
+        isPaused: Bool
+    ) async -> Bool
 
-    func markWatched(itemId: String) async
+    func markWatched(itemId: String) async -> Bool
 }
 
 extension MediaBackend {
@@ -287,6 +298,7 @@ enum CodecSupport {
         guard let codec, !codec.isEmpty else { return true }
         guard directPlayVideoCodecs(hevcCapable: hevcCapable).contains(codec) else { return false }
         if codec == "h264", let bitDepth, bitDepth > 8 { return false }
+        if codec == "hevc", let bitDepth, bitDepth > 10 { return false }
         return true
     }
 

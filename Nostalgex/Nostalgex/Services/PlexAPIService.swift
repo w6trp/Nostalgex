@@ -432,7 +432,10 @@ struct PlexAPIService: MediaBackend {
             videoBitDepth: media?.videoStream?.bitDepth,
             doviProfile: media?.videoStream?.DOVIProfile,
             videoWidth: media?.width,
-            videoHeight: media?.height
+            videoHeight: media?.height,
+            mediaIndex: ep.bestMediaIndex ?? 0,
+            playbackParts: media?.playbackParts,
+            exactDurationSeconds: ep.duration.map { Double($0) / 1000 }
         )
     }
 
@@ -507,7 +510,10 @@ struct PlexAPIService: MediaBackend {
             videoBitDepth: media?.videoStream?.bitDepth,
             doviProfile: media?.videoStream?.DOVIProfile,
             videoWidth: media?.width,
-            videoHeight: media?.height
+            videoHeight: media?.height,
+            mediaIndex: item.bestMediaIndex ?? 0,
+            playbackParts: media?.playbackParts,
+            exactDurationSeconds: item.duration.map { Double($0) / 1000 }
         )
     }
 
@@ -670,7 +676,7 @@ struct PlexAPIService: MediaBackend {
     ///   negative speed: picture, no sound, then nothing.
     static func clientProfileExtra(hevcCapable: Bool, offersHEVC: Bool) -> String {
         let hevc = hevcCapable && offersHEVC
-        let video = CodecSupport.directPlayVideoCodecs(hevcCapable: hevc)
+        let video = CodecSupport.directPlayVideoCodecs(hevcCapable: hevc).subtracting(["mpeg4"])
         let tsVideo = video.subtracting(["hevc"]).sorted().joined(separator: ",")
         let mp4Video = video.sorted().joined(separator: ",")
         let audio = CodecSupport.transcodeAudioCodecs.sorted().joined(separator: ",")
@@ -697,8 +703,8 @@ struct PlexAPIService: MediaBackend {
         let offersHEVC = CodecSupport.offersHEVC(doviProfile: item.doviProfile, deviceCapable: hevcCapable)
         let items: [URLQueryItem] = [
             .init(name: "path",                      value: "/library/metadata/\(item.ratingKey)"),
-            .init(name: "mediaIndex",                value: "0"),
-            .init(name: "partIndex",                 value: "0"),
+            .init(name: "mediaIndex",                value: String(item.mediaIndex)),
+            .init(name: "partIndex",                 value: String(item.partIndex)),
             .init(name: "protocol",                  value: "hls"),
             .init(name: "session",                   value: sessionID),
             .init(name: "offset",                    value: String(offsetSeconds)),
@@ -864,7 +870,12 @@ struct PlexAPIService: MediaBackend {
         guard var components = URLComponents(string: "\(serverURL)/video/:/transcode/universal/start.m3u8") else { return nil }
         components.queryItems = Self.transcodeQueryItems(
             for: item, sessionID: sessionID, offsetSeconds: max(0, offsetSeconds), isLocal: isLikelyLocalServer,
-            quality: .high, token: token, clientID: clientID, hevcCapable: false)
+            quality: StreamQuality.current.cappedRecoveryQuality, token: token, clientID: clientID, hevcCapable: false)
+        // This rung handles video that opened but could not decode. Rewrapping that same
+        // video again is not recovery, even when it is below the bitrate/resolution cap.
+        components.queryItems = components.queryItems?.map {
+            $0.name == "directStream" ? URLQueryItem(name: $0.name, value: "0") : $0
+        }
         return components.url
     }
 
@@ -1136,42 +1147,42 @@ struct PlexAPIService: MediaBackend {
     // MARK: - Session reporting (Now Playing + Scrobble)
 
     /// Report current playback position to Plex so Now Playing, On Deck, and watch history stay accurate.
-    func reportTimeline(ratingKey: String, key: String, state: String, timeMs: Int, durationMs: Int, sessionID: String) async {
-        guard var components = URLComponents(string: "\(serverURL)/:/timeline") else { return }
+    @discardableResult
+    func reportTimeline(ratingKey: String, key: String, state: String, timeMs: Int, durationMs: Int, sessionID: String) async -> Bool {
+        guard var components = URLComponents(string: "\(serverURL)/:/timeline") else { return false }
         components.queryItems = [
-            .init(name: "ratingKey",                value: ratingKey),
-            .init(name: "key",                      value: key),
-            .init(name: "state",                    value: state),
-            .init(name: "time",                     value: "\(timeMs)"),
-            .init(name: "duration",                 value: "\(durationMs)"),
-            .init(name: "X-Plex-Session-Identifier", value: sessionID),
+            .init(name: "ratingKey", value: ratingKey),
+            .init(name: "key", value: key),
+            .init(name: "state", value: state),
+            .init(name: "time", value: "\(timeMs)"),
+            .init(name: "duration", value: "\(durationMs)"),
         ]
-        guard let url = components.url else { return }
-        var req = URLRequest(url: url)
-        req.httpMethod = "PUT"
-        baseHeaders.forEach { req.setValue($1, forHTTPHeaderField: $0) }
-        _ = try? await Self.session.data(for: req)
+        return await sendPlaybackReport(components: components, method: "POST", sessionID: sessionID)
     }
 
-    /// Mark an item as watched in Plex (scrobble). Fires once per session when the hybrid
-    /// watch rule passes (entry gate ≤ 15% + active time ≥ 75% of runtime).
-    func scrobble(ratingKey: String) async {
-        guard var components = URLComponents(string: "\(serverURL)/:/scrobble") else { return }
+    /// Only invoked when the viewer explicitly enables history reporting.
+    @discardableResult
+    func scrobble(ratingKey: String) async -> Bool {
+        guard var components = URLComponents(string: "\(serverURL)/:/scrobble") else { return false }
         components.queryItems = [
-            .init(name: "key",        value: "/library/metadata/\(ratingKey)"),
+            .init(name: "key", value: ratingKey),
             .init(name: "identifier", value: "com.plexapp.plugins.library"),
         ]
-        guard let url = components.url else { return }
-        var req = URLRequest(url: url)
-        baseHeaders.forEach { req.setValue($1, forHTTPHeaderField: $0) }
+        return await sendPlaybackReport(components: components, method: "PUT")
+    }
+
+    private func sendPlaybackReport(components: URLComponents, method: String, sessionID: String? = nil) async -> Bool {
+        guard let url = components.url else { return false }
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.timeoutInterval = 10
+        if let sessionID { request.setValue(sessionID, forHTTPHeaderField: "X-Plex-Session-Identifier") }
+        baseHeaders.forEach { request.setValue($1, forHTTPHeaderField: $0) }
         do {
-            let (_, response) = try await Self.session.data(for: req)
-            if let http = response as? HTTPURLResponse {
-                print("[Plex90] Scrobble \(ratingKey): HTTP \(http.statusCode)")
-            }
-        } catch {
-            print("[Plex90] Scrobble \(ratingKey) failed silently")
-        }
+            let (_, response) = try await Self.session.data(for: request)
+            guard let http = response as? HTTPURLResponse else { return false }
+            return (200..<300).contains(http.statusCode)
+        } catch { return false }
     }
 
     // MARK: - Error
@@ -1322,14 +1333,19 @@ struct PlexRawItem: Decodable {
     /// Highest-quality version: max bitrate, tie-broken on vertical resolution. Falls back to
     /// the first version when none report a bitrate, so libraries without that metadata behave
     /// exactly as before.
-    var bestMedia: PlexMedia? {
+    var bestMediaIndex: Int? {
         guard let medias = Media, !medias.isEmpty else { return nil }
-        guard medias.contains(where: { $0.bitrate != nil }) else { return medias.first }
-        return medias.max { a, b in
-            let ba = a.bitrate ?? Int.min, bb = b.bitrate ?? Int.min
+        guard medias.contains(where: { $0.bitrate != nil }) else { return 0 }
+        return medias.indices.max { a, b in
+            let ba = medias[a].bitrate ?? Int.min, bb = medias[b].bitrate ?? Int.min
             if ba != bb { return ba < bb }
-            return PlexRawItem.resolutionHeight(a.videoResolution) < PlexRawItem.resolutionHeight(b.videoResolution)
+            return PlexRawItem.resolutionHeight(medias[a].videoResolution) < PlexRawItem.resolutionHeight(medias[b].videoResolution)
         }
+    }
+
+    var bestMedia: PlexMedia? {
+        guard let index = bestMediaIndex else { return nil }
+        return Media?[index]
     }
 
     /// Vertical resolution from a "WIDTHxHEIGHT" string (or a label like "4k"); 0 if unknown.
@@ -1354,6 +1370,8 @@ struct PlexRawItem: Decodable {
         let Part: [PlexPart]?
         struct PlexPart: Decodable {
             let key: String?
+            let container: String?
+            let duration: Int?
             let Stream: [PlexStream]?
         }
         struct PlexStream: Decodable {
@@ -1361,6 +1379,17 @@ struct PlexRawItem: Decodable {
             let codec: String?
             let bitDepth: Int?
             let DOVIProfile: Int?
+        }
+        var playbackParts: [PlexPartPlaybackInfo] {
+            (Part ?? []).compactMap { part in
+                guard let key = part.key else { return nil }
+                let video = part.Stream?.first { $0.streamType == 1 }
+                let audio = part.Stream?.first { $0.streamType == 2 }
+                return PlexPartPlaybackInfo(key: key, container: part.container ?? container,
+                    videoCodec: video?.codec ?? videoCodec, audioCodec: audio?.codec ?? audioCodec,
+                    bitDepth: video?.bitDepth, doviProfile: video?.DOVIProfile,
+                    durationSeconds: part.duration.map { Double($0) / 1000 })
+            }
         }
         var videoStream: PlexStream? {
             Part?.first?.Stream?.first { $0.streamType == 1 }

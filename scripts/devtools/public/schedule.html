@@ -104,7 +104,7 @@ async function loadChannels() {
   const warned = data.channels.filter(c => c.unsupportedRules.length);
   if (warned.length) {
     warnEl.style.display = "block";
-    warnEl.innerHTML = `<strong>${warned.length} channel${warned.length === 1 ? "" : "s"} use rules this dev tool can't fully evaluate</strong> (keywords, networks, ratingMin — these need TMDB/OMDb enrichment that only the iOS app has). Affected channels may show <strong>fewer</strong> airings here than in the actual app, since the missing rules typically broaden matches.`;
+    warnEl.innerHTML = `<strong>${warned.length} channel${warned.length === 1 ? "" : "s"} use rules this dev tool can't fully evaluate</strong> (network/company and OMDb fields may be absent from this snapshot). Affected channels may show <strong>fewer</strong> airings here than in the actual app, since the missing rules typically broaden matches.`;
   }
 }
 

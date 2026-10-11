@@ -55,7 +55,7 @@
   </div>
 
   <div class="warn-banner">
-    Read these numbers as a <strong>lower bound</strong>. The snapshot comes from the shared JS filter, not the tvOS app. It can't evaluate <span class="code">networks</span>, <span class="code">excludeNetworks</span>, <span class="code">excludeKeywords</span> or <span class="code">ratingMin</span>, only partially evaluates studios, and only fetches TMDB keywords for movies. So an orphan here is a candidate to check, not a confirmed gap. Orphans explained by those tool limits are separated out below.
+    Read these numbers as <strong>diagnostic candidates</strong>. The snapshot uses shared channel rules, but its library, timezone, prior schedule and enrichment may differ from your Apple TV. Optional TMDB keywords cover movies and shows; network/company and OMDb data may be absent. An orphan here is a candidate to verify, not a confirmed app defect.
   </div>
 
   <div id="warn" class="warn-banner" style="display:none"></div>
@@ -192,7 +192,7 @@ function render() {
       <td>${escapeHtml(c.name)}</td>
       <td class="year" style="color:${c.poolSize === 0 ? "var(--red)" : c.belowMin ? "var(--yellow)" : "var(--cyan)"}">${c.poolSize.toLocaleString()}</td>
       <td class="year">${c.minItems ?? '<span class="muted">—</span>'}</td>
-      <td class="chans">${c.unsupportedRules.map(r => `<span class="badge warn" title="This tool can't evaluate this rule; the real app pool is probably larger">⚠ ${escapeHtml(r)}</span>`).join("")}${c.partialRules.map(r => `<span class="badge" title="Partially evaluated (Plex studio field only)">~ ${escapeHtml(r)}</span>`).join("")}${!c.unsupportedRules.length && !c.partialRules.length ? '<span class="muted">exact</span>' : ""}</td>
+      <td class="chans">${c.unsupportedRules.map(r => `<span class="badge warn" title="This tool can't evaluate this rule; the real app pool is probably larger">⚠ ${escapeHtml(r)}</span>`).join("")}${c.partialRules.map(r => `<span class="badge" title="Depends on available enrichment">~ ${escapeHtml(r)}</span>`).join("")}${!c.unsupportedRules.length && !c.partialRules.length ? '<span class="muted">shared rules</span>' : ""}</td>
     </tr>`).join("");
 
   contentEl.innerHTML = `

@@ -10,6 +10,7 @@
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js" integrity="sha384-9v3HcdYrO3D+OPDTjZ40RXocgE4GtXVCd3/mCS62JsM93JXgI1afJVuwjFvsu6ni" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js" integrity="sha384-3zSEDfvllQohrq0PHL1fOXJuC/jSOO34H46t6UQfobFOmxE5BpjjaIJY5F2/bMnU" crossorigin="anonymous"></script>
 <script src="scripts/nostalgex-channel-filter.cjs"></script>
+<script src="scripts/nostalgex-playback-core.js"></script>
 <script src="scripts/nostalgex-music-brainz.js"></script>
 <script src="scripts/nostalgex-daily-manifest.js"></script>
 <script src="scripts/nostalgex-library-load.js"></script>
@@ -2192,8 +2193,8 @@
       <div class="config-section-label" style="margin-top: 28px;">PLAYBACK</div>
       <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 20px; background: rgba(255,255,255,0.03); border: 2px solid rgba(255,255,255,0.08); border-radius: 6px;">
         <div>
-          <div style="font-size: 22px; color: rgba(255,255,255,0.85);">Sync activity to server</div>
-          <div style="font-size: 12px; color: rgba(255,255,255,0.45); margin-top: 4px;">Off by default. Turn on and every program you tune past is reported, so it piles up in Continue Watching and grows play counts.</div>
+          <div style="font-size: 22px; color: rgba(255,255,255,0.85);">Sync history and resume progress</div>
+          <div style="font-size: 12px; color: rgba(255,255,255,0.45); margin-top: 4px;">Off: this app does not send history or progress updates. On reports active playback and can change Continue Watching and play counts. Plex does not offer a verified activity-only mode here.</div>
         </div>
         <button class="plex-btn" id="cfg-plexsync-toggle" style="font-size: 11px; padding: 12px 22px;" onclick="toggleSyncActivity()">OFF</button>
       </div>
@@ -2718,7 +2719,7 @@
       manifest: channelMembershipManifest,
       exclusiveRules,
     });
-    return pool.items.filter(item => !blacklist.has(String(item.ratingKey)));
+    return pool.items.filter(item => !blacklist.has(mediaIdentity(item)));
   }
 
   function getCoveredGenres() {
@@ -2776,6 +2777,12 @@
   let isDemoMode = false;
   let videoMuted = true;
   let hlsInstance = null;
+  let playbackGeneration = 0;
+  let libraryGeneration = 0;
+  let subtitleGeneration = 0;
+  let playbackStallTimer = null;
+  const failedPlaybackItems = new Set();
+  const mediaIdentity = item => NostalgexPlaybackCore.identity(item);
   // Consecutive items that failed to play on the current channel. Reset by any frame of
   // real playback. Stops a dead server from skipping through a whole channel at speed.
   let consecutivePlaybackFailures = 0;
@@ -2789,7 +2796,14 @@
   function stopActiveTranscode() {
     const session = activeTranscodeSession;
     activeTranscodeSession = null;
-    if (!session || mediaBackend === 'jellyfin') return;
+    if (!session) return;
+    if (session.backend === 'jellyfin') {
+      const q = new URLSearchParams({ deviceId: session.clientID, playSessionId: session.id });
+      fetch(`${session.serverUrl}/Videos/ActiveEncodings?${q}`, {
+        method: 'DELETE', headers: { Authorization: session.authorization }, keepalive: true,
+      }).catch(() => {});
+      return;
+    }
     const url = `${session.serverUrl}/video/:/transcode/universal/stop`
       + `?session=${encodeURIComponent(session.id)}&X-Plex-Token=${encodeURIComponent(session.token)}`;
     // Best effort: the channel has already moved on either way.
@@ -2808,7 +2822,7 @@
   // default, mirroring tvOS: channel surfing tunes past dozens of programs and
   // reporting each one buries the household's real "Continue Watching" row. An
   // explicit choice is stored either way, so opting in survives this default.
-  let syncPlexActivity = localStorage.getItem('plex90_sync_activity') === 'true';
+  let syncPlexActivity = localStorage.getItem('nostalgex_history_sync_v2') === 'true';
 
   // Subtitles (Jellyfin, fullscreen-only — mirrors the tvOS app). Off by default.
   let subtitlesEnabled = localStorage.getItem('plex90_subtitles_enabled') === 'true';
@@ -2823,7 +2837,7 @@
 
   // Blacklist — ratingKeys excluded from all channels
   let blacklist = new Set();
-  let blacklistedItems = []; // [{ratingKey, title}] for display
+  let blacklistedItems = []; // [{ratingKey, title}] for display; legacy entries migrate after the library loads
 
   // ══════════════════════════════════════
   // INITIALIZE
@@ -3057,8 +3071,8 @@
 
   function buildChannelSchedule(channel) {
     channel.itemPool = (channel.itemPool || []).filter(item => item && item.duration > 0);
-    const items = getTimeFilteredPool(channel);
-    if (items.length === 0) return;
+    const items = getTimeFilteredPool(channel).filter(item => !failedPlaybackItems.has(mediaIdentity(item)));
+    if (items.length === 0) { channel.schedule = []; return; }
 
     const nowSec = Date.now() / 1000;
     const blocks = NostalgexDailyManifest.getManifestBlocks(channel, items, Date.now(), manifestServerKey());
@@ -3083,7 +3097,7 @@
         item.progress = currentDurationSec > 0 ? (offsetInCurrent / currentDurationSec) * 100 : 0;
         item.position = formatTime(offsetInCurrent);
         item.total = formatTime(currentDurationSec);
-        item.offsetSeconds = Math.floor(offsetInCurrent);
+        item.offsetSeconds = Math.floor(offsetInCurrent + (block.offsetSeconds || 0));
       }
       schedule.push(item);
     }
@@ -3401,6 +3415,8 @@
     if (currentChannel === channelId) return;
 
     clearVideoError();
+    failedPlaybackItems.clear();
+    consecutivePlaybackFailures = 0;
     currentChannel = channelId;
     appState = 'player';
     document.getElementById('player-screen').classList.add('has-channel');
@@ -3540,6 +3556,7 @@
       });
       if (!res.ok) return fallback;
       const data = await res.json();
+      item.playSessionId = data.PlaySessionId;
       const sources = data.MediaSources || [];
       const source = sources.find(s => s.Id === msid) || sources[0];
       if (source && source.TranscodingUrl) {
@@ -3565,133 +3582,56 @@
   let playbackTracker = null;
 
   function makePlaybackTracker(item) {
-    const totalSec = (item.duration || 0) * 60;
-    const seekOffset = Math.floor(item.offsetSeconds || 0);
-    const entryFrac = totalSec > 0 ? seekOffset / totalSec : 1;
-    const sessionID = (crypto.randomUUID ? crypto.randomUUID() : 'sess-' + Date.now());
-    const rk = item.ratingKey;
-    // Per-item server creds so multi-server Plex reports to the right server.
+    const video = document.getElementById('plex-video');
     const serverUrl = item.serverUrl || plexServerUrl;
     const serverToken = item.serverToken || plexToken;
-    const isPlex = mediaBackend !== 'jellyfin';
-
-    const t = {
-      eligibleEntry: entryFrac <= 0.15,
-      activeWatchSeconds: 0,
-      watchStart: null,
-      scrobbled: false,
-      stopped: false,
-      started: false,
-      timer: null,
-    };
-
-    function accumulate() {
-      if (t.watchStart == null) return;
-      t.activeWatchSeconds += (Date.now() - t.watchStart) / 1000;
-      t.watchStart = null;
+    const backend = mediaBackend;
+    const auth = backend === 'jellyfin' ? jellyfinAuthHeader() : null;
+    const sessionID = item.playSessionId || activeTranscodeSession?.id || crypto.randomUUID();
+    const clientID = getClientId();
+    const transport = NostalgexPlaybackCore.transport(fetch);
+    function dispatch(url, options) {
+      return transport.request(url, options).then(ok => {
+        if (!ok) console.warn('[Tracker] Report was not acknowledged');
+        return ok;
+      });
     }
-    function timeMs() { return (seekOffset * 1000) + Math.round(t.activeWatchSeconds * 1000); }
-    function durationMs() { return Math.round(totalSec * 1000); }
-
-    // ── Plex reporting ──
-    function plexTimeline(state) {
-      const u = `${serverUrl}/:/timeline?ratingKey=${encodeURIComponent(rk)}`
-        + `&key=${encodeURIComponent('/library/metadata/' + rk)}`
-        + `&state=${state}&time=${timeMs()}&duration=${durationMs()}`
-        + `&X-Plex-Session-Identifier=${encodeURIComponent(sessionID)}`
-        + `&X-Plex-Token=${encodeURIComponent(serverToken)}`
-        + `&X-Plex-Client-Identifier=${encodeURIComponent(getClientId())}`
-        + `&X-Plex-Product=Nostalgex&X-Plex-Platform=Web`;
-      fetch(u, { method: 'PUT', headers: { 'Accept': 'application/json' } }).catch(() => {});
-    }
-    function plexScrobble() {
-      const u = `${serverUrl}/:/scrobble?key=${encodeURIComponent('/library/metadata/' + rk)}`
-        + `&identifier=com.plexapp.plugins.library`
-        + `&X-Plex-Token=${encodeURIComponent(serverToken)}`
-        + `&X-Plex-Client-Identifier=${encodeURIComponent(getClientId())}`;
-      fetch(u, { headers: { 'Accept': 'application/json' } }).catch(() => {});
-    }
-
-    // ── Jellyfin / Emby reporting ──
-    // Jellyfin owns its own play-count math: it increments PlayCount when a
-    // /Sessions/Playing/Stopped report lands with the position near completion. So we
-    // just drive the native lifecycle and let the server count once — no explicit
-    // mark-played (that would double-count). On a mid-program channel change the stop
-    // position is partial, so Jellyfin correctly does NOT count it.
-    function jfPost(path) {
-      fetch(`${plexServerUrl}${path}`, {
-        method: 'POST',
-        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'Authorization': jellyfinAuthHeader() },
-        body: JSON.stringify({
-          ItemId: rk,
-          PlaySessionId: sessionID,
-          MediaSourceId: item.partKey || rk,
-          PositionTicks: timeMs() * 10000, // ms -> 100ns ticks
-          IsPaused: false,
-        }),
-      }).catch(() => {});
-    }
-
-    function reportProgress() {
-      if (isPlex) plexTimeline('playing');
-      else jfPost('/Sessions/Playing/Progress');
-    }
-    // Plex only: timeline never bumps the view count, so we scrobble explicitly when the
-    // hybrid gate passes. (Jellyfin increments itself via the stop report above.)
-    function evaluateAndScrobble() {
-      if (!isPlex || t.scrobbled) return;
-      if (!t.eligibleEntry || totalSec <= 0) return;
-      if (t.activeWatchSeconds / totalSec < 0.75) return;
-      t.scrobbled = true;
-      plexScrobble();
-      console.log('[Tracker] SCROBBLE', item.title);
-    }
-    function tick() {
-      if (t.stopped) return;
-      accumulate();
-      const video = document.getElementById('plex-video');
-      if (video && !video.paused && !video.ended) t.watchStart = Date.now();
-      reportProgress();
-      evaluateAndScrobble();
-    }
-
-    return {
-      // Begin the session once playback actually starts. Idempotent.
-      onReady() {
-        if (t.stopped || t.started) return;
-        t.started = true;
-        t.watchStart = Date.now();
-        if (isPlex) plexTimeline('playing');
-        else jfPost('/Sessions/Playing');
-        t.timer = setInterval(tick, 10000);
-      },
-      onPause() { if (!t.stopped) accumulate(); },
-      onResume() { if (!t.stopped && t.started) t.watchStart = Date.now(); },
-      // Flush, send the stop report, and do a final Plex scrobble check.
-      stop() {
-        if (t.stopped) return;
-        t.stopped = true;
-        if (t.timer) { clearInterval(t.timer); t.timer = null; }
-        accumulate();
-        if (t.started) {
-          if (isPlex) plexTimeline('stopped');
-          else jfPost('/Sessions/Playing/Stopped');
+    return NostalgexPlaybackCore.tracker({ video, item, hidden: () => document.hidden, cancelReports: () => transport.cancel(),
+      send(state, time, duration, keepalive) {
+        if (backend === 'jellyfin') {
+          const suffix = state === 'stopped' ? '/Stopped' : (item._reportStarted ? '/Progress' : '');
+          item._reportStarted = true;
+          return dispatch(`${serverUrl}/Sessions/Playing${suffix}`, {
+            method: 'POST', keepalive,
+            headers: { 'Content-Type': 'application/json', Authorization: auth },
+            body: JSON.stringify({ ItemId: item.ratingKey, PlaySessionId: sessionID,
+              MediaSourceId: item.partKey || item.ratingKey, PositionTicks: time * 10000,
+              IsPaused: state !== 'playing' }),
+          });
+        } else {
+          const q = new URLSearchParams({ ratingKey: item.ratingKey,
+            key: '/library/metadata/' + item.ratingKey, state, time, duration,
+            'X-Plex-Session-Identifier': sessionID, 'X-Plex-Token': serverToken,
+            'X-Plex-Client-Identifier': clientID, 'X-Plex-Product': 'Nostalgex', 'X-Plex-Platform': 'Web' });
+          return dispatch(`${serverUrl}/:/timeline?${q}`, { method: 'POST', keepalive, headers: { Accept: 'application/json', 'X-Plex-Session-Identifier': sessionID } });
         }
-        evaluateAndScrobble();
       },
-      // Tear down without reporting anything (used when the user turns off activity
-      // sync mid-program). Clears the pulse timer so no further timeline/scrobble fires
-      // and, unlike stop(), sends no final "stopped" report — so no view-offset is
-      // written and the item never lands in Continue Watching.
-      abandon() {
-        if (t.stopped) return;
-        t.stopped = true;
-        if (t.timer) { clearInterval(t.timer); t.timer = null; }
+      scrobble() {
+        if (backend === 'jellyfin') return true;
+        const q = new URLSearchParams({ key: item.ratingKey, identifier: 'com.plexapp.plugins.library',
+          'X-Plex-Token': serverToken, 'X-Plex-Client-Identifier': clientID });
+        return dispatch(`${serverUrl}/:/scrobble?${q}`, { method: 'PUT', keepalive: true, headers: { 'X-Plex-Session-Identifier': sessionID } });
       },
-    };
+    });
   }
 
   async function playCurrentItem(item, channel) {
+    stopVideo();
+    const generation = playbackGeneration;
+    const requestBackend = mediaBackend;
+    const requestServerURL = item.serverUrl || plexServerUrl;
+    const requestAuthorization = requestBackend === 'jellyfin' ? jellyfinAuthHeader() : null;
+    const requestClientID = getClientId();
     // Finalize the previous program's tracker before starting a new one.
     if (playbackTracker) { playbackTracker.stop(); playbackTracker = null; }
 
@@ -3723,15 +3663,7 @@
     let canDirectPlay = false;
     if (mediaBackend === 'jellyfin') {
       const msid = item.partKey || item.ratingKey;   // partKey holds the MediaSourceId for Jellyfin
-      const container = (item.container || '').toLowerCase();
-      const vcodec = (item.videoCodec || '').toLowerCase();
-      const acodec = (item.audioCodec || '').toLowerCase();
-      const containerOK = ['mp4', 'webm', 'mov', 'm4v'].includes(container);
-      const videoOK = ['h264', 'avc', 'vp8', 'vp9', 'av1'].includes(vcodec);
-      const audioOK = !acodec || ['aac', 'mp3', 'opus', 'vorbis', 'flac'].includes(acodec);
-      // Only direct-play when we KNOW the codecs are browser-safe. Unknown video codec →
-      // transcode (safer than a decode failure).
-      canDirectPlay = !item._forceTranscode && containerOK && videoOK && audioOK;
+      canDirectPlay = NostalgexPlaybackCore.canDirectPlay(item, video) && !pickAudioStream(item.audioStreams || []);
       if (canDirectPlay) {
         const pickedAudio = pickAudioStream(item.audioStreams || []);
         streamUrl = `${plexServerUrl}/Videos/${item.ratingKey}/stream`
@@ -3742,7 +3674,7 @@
         streamUrl = await getJellyfinTranscodeUrl(item);
       }
     } else {
-      canDirectPlay = !item._forceTranscode && item.partKey && ['mp4', 'webm', 'mov'].includes(item.container);
+      canDirectPlay = NostalgexPlaybackCore.canDirectPlay(item, video);
 
       // Use per-item server credentials for multi-server support; fall back to primary
       const itemServerUrl = item.serverUrl || plexServerUrl;
@@ -3752,24 +3684,39 @@
         streamUrl = `${itemServerUrl}${item.partKey}?X-Plex-Token=${itemServerToken}`;
 
       } else {
-        // HLS transcode - works for all formats
+        // Ask for a conservative H.264/AAC fallback. Server/codec limits still apply.
         const transcodeSessionId = (crypto.randomUUID && crypto.randomUUID())
           || `web-${Date.now()}-${Math.random().toString(16).slice(2)}`;
         activeTranscodeSession = { id: transcodeSessionId, serverUrl: itemServerUrl, token: itemServerToken };
         streamUrl = `${itemServerUrl}/video/:/transcode/universal/start.m3u8`
           + `?path=${encodeURIComponent('/library/metadata/' + item.ratingKey)}`
-          + `&mediaIndex=0&partIndex=0&protocol=hls`
+          + `&mediaIndex=${item.mediaIndex || 0}&partIndex=${item.partIndex || 0}&protocol=hls`
+          + `&directPlay=0&directStream=0&videoCodec=h264&audioCodec=aac&maxAudioChannels=2`
           + `&offset=${Math.floor(item.offsetSeconds || 0)}`
           + `&copyts=1&X-Plex-Token=${itemServerToken}`
           + `&session=${transcodeSessionId}`
           + `&X-Plex-Session-Identifier=${transcodeSessionId}`
           + `&X-Plex-Client-Identifier=${getClientId()}`
-          + `&X-Plex-Product=Plex%2090`
+          + `&X-Plex-Product=Nostalgex`
           + `&X-Plex-Platform=Web&X-Plex-Platform-Version=1.0`
-          + `&X-Plex-Device=Browser&X-Plex-Device-Name=Plex90`;
+          + `&X-Plex-Device=Browser&X-Plex-Device-Name=Nostalgex`;
 
       }
     }
+
+    if (requestBackend === 'jellyfin' && !canDirectPlay && item.playSessionId) {
+      const session = { backend: 'jellyfin', id: item.playSessionId,
+        serverUrl: requestServerURL, authorization: requestAuthorization, clientID: requestClientID };
+      if (generation !== playbackGeneration) {
+        const q = new URLSearchParams({ deviceId: session.clientID, playSessionId: session.id });
+        fetch(`${session.serverUrl}/Videos/ActiveEncodings?${q}`, {
+          method: 'DELETE', headers: { Authorization: session.authorization }, keepalive: true,
+        }).catch(() => {});
+        return;
+      }
+      activeTranscodeSession = session;
+    }
+    if (generation !== playbackGeneration) return;
 
     // Destroy the previous loader so it cannot sit there requesting segments of a session
     // that has already been released above.
@@ -3779,18 +3726,19 @@
     }
 
     // Track the live item and clear any previous subtitle tracks/blobs.
-    currentPlayingItem = item;
+    currentPlayingItem = { ...item, _reportStarted: false, _isDirectPlay: canDirectPlay };
+    item = currentPlayingItem;
     clearSubtitleTracks();
 
     // Spin up a fresh playback tracker for this program (Now Playing + scrobble).
     // When activity sync is off we leave it null — every call site guards on it, so
-    // no timeline/scrobble is ever sent and nothing lands in Continue Watching.
+    // this app sends no timeline/scrobble updates. The server may retain its own session logs.
     playbackTracker = syncPlexActivity ? makePlaybackTracker(item) : null;
 
     // Check if it's an HLS stream
     const isHLS = streamUrl.includes('.m3u8');
 
-    if (isHLS && Hls.isSupported()) {
+    if (isHLS && typeof Hls !== 'undefined' && Hls.isSupported()) {
       hlsInstance = new Hls({
         maxBufferLength: 30,
         startPosition: item.offsetSeconds || 0,
@@ -3798,6 +3746,7 @@
       hlsInstance.loadSource(streamUrl);
       hlsInstance.attachMedia(video);
       hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+        if (generation !== playbackGeneration) return;
         video.play().catch(e => console.warn('Autoplay blocked:', e));
       });
       // One recovery attempt per kind, per program. The flags live out here on purpose:
@@ -3819,7 +3768,7 @@
         (Hls.ErrorDetails && Hls.ErrorDetails.LEVEL_EMPTY_ERROR) || 'levelEmptyError',
       ]);
       hlsInstance.on(Hls.Events.ERROR, (event, data) => {
-        if (!data.fatal) return;
+        if (generation !== playbackGeneration || !data.fatal) return;
         if (DEAD_STREAM_DETAILS.has(data.details)) {
           try { thisInstance.destroy(); } catch (e) {}
           if (hlsInstance === thisInstance) hlsInstance = null;
@@ -3858,17 +3807,19 @@
     } else if (isHLS && video.canPlayType('application/vnd.apple.mpegurl')) {
       // Safari native HLS
       video.src = streamUrl;
-      video.addEventListener('loadedmetadata', () => {
+      video.onloadedmetadata = () => {
+        if (generation !== playbackGeneration) return;
         if (item.offsetSeconds) video.currentTime = item.offsetSeconds;
         video.play().catch(e => console.warn('Autoplay blocked:', e));
-      }, { once: true });
+      };
     } else {
       // Direct play (mp4, webm)
       video.src = streamUrl;
-      video.addEventListener('loadedmetadata', () => {
+      video.onloadedmetadata = () => {
+        if (generation !== playbackGeneration) return;
         if (item.offsetSeconds) video.currentTime = item.offsetSeconds;
         video.play().catch(e => console.warn('Autoplay blocked:', e));
-      }, { once: true });
+      };
     }
 
     // Attach subtitles (no-ops unless enabled + Jellyfin + fullscreen).
@@ -3879,17 +3830,24 @@
       document.getElementById('unmute-btn').style.display = 'block';
     }
 
+    // Bound startup too: some browsers never emit a useful error for dead metadata.
+    playbackStallTimer = setTimeout(() => {
+      if (generation === playbackGeneration && video.readyState < 2) {
+        failCurrentItem(channel, item, classifyPlaybackFailure({ network: true }));
+      }
+    }, 20000);
+
     // Stall detector: if video doesn't make progress within 8s, skip to next item
-    let stallTimer = null;
     let lastTime = -1;
-    const clearStall = () => { if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; } };
+    const clearStall = () => { if (playbackStallTimer) { clearTimeout(playbackStallTimer); playbackStallTimer = null; } };
     const armStall = () => {
       clearStall();
-      stallTimer = setTimeout(() => {
+      playbackStallTimer = setTimeout(() => {
+        if (generation !== playbackGeneration) return;
         if (!video.paused && !video.ended && video.currentTime === lastTime) {
           console.warn('[PLEX 90] Stall detected, skipping:', item.title);
           clearStall();
-          onItemEnded(channel);
+          failCurrentItem(channel, item, classifyPlaybackFailure({ tooSlow: true }));
         }
       }, 8000);
       lastTime = video.currentTime;
@@ -3898,6 +3856,7 @@
     // Drive the playback tracker off real player events. Using on* assignment (not
     // addEventListener) so each new program replaces the handler instead of leaking one.
     video.onplaying = () => {
+      if (generation !== playbackGeneration) return;
       consecutivePlaybackFailures = 0;   // something actually played; the run is broken
       armStall();
       if (playbackTracker) {
@@ -3905,12 +3864,15 @@
         playbackTracker.onResume();  // re-arm the watch clock after a stall/pause
       }
     };
-    video.onwaiting = armStall;
+    video.onwaiting = () => { armStall(); if (playbackTracker) playbackTracker.onWaiting(); };
+    video.onseeking = () => { if (playbackTracker) playbackTracker.onSeek(); };
+    video.onseeked = () => { if (playbackTracker) playbackTracker.onSeek(); };
     video.onpause = () => { if (playbackTracker) playbackTracker.onPause(); };
 
     // Handle video ending - advance to next item
     video.onended = () => { clearStall(); onItemEnded(channel); };
     video.onerror = () => {
+      if (generation !== playbackGeneration) return;
       const code = video.error?.code;
       // Decode/format failure on a direct play → retry once via transcode. Keep partKey so
       // Jellyfin/Plex still gets the right media source id (don't null it).
@@ -3934,6 +3896,9 @@
   // of racing through the schedule, because that means the server, not the file.
   const MAX_CONSECUTIVE_FAILURES = 3;
   function failCurrentItem(channel, item, failure) {
+    failedPlaybackItems.add(mediaIdentity(item));
+    stopVideo();
+    const generation = playbackGeneration;
     consecutivePlaybackFailures += 1;
     console.warn('[PLEX 90] Playback failed', item && item.title,
       `(${consecutivePlaybackFailures}/${MAX_CONSECUTIVE_FAILURES})`);
@@ -3942,7 +3907,7 @@
     if (!willSkip) return;   // three in a row points at the server; park rather than spin
     // Five seconds, same as the Apple TV: long enough to read why.
     setTimeout(() => {
-      if (currentChannel !== (channel && channel.id)) return;  // user already tuned away
+      if (generation !== playbackGeneration || currentChannel !== (channel && channel.id)) return;  // user already tuned away
       clearVideoError();
       onItemEnded(channel);
     }, 5000);
@@ -3959,13 +3924,19 @@
       document.getElementById('np-meta').textContent = now.meta;
       showNowPlaying();
     }
+    if (!now) showVideoError("NO PLAYABLE PROGRAMS LEFT ON THIS CHANNEL. CHANGE CHANNEL TO RETRY.");
     renderActiveGuide();
   }
 
-  function stopVideo() {
+  function stopVideo(keepalive = false) {
+    playbackGeneration++;
+    if (playbackStallTimer) clearTimeout(playbackStallTimer);
+    playbackStallTimer = null;
+    clearSubtitleTracks();
     // Finalize any in-flight watch session (flush + scrobble check) before tearing down.
-    if (playbackTracker) { playbackTracker.stop(); playbackTracker = null; }
+    if (playbackTracker) { playbackTracker.stop(keepalive); playbackTracker = null; }
     const video = document.getElementById('plex-video');
+    video.onplaying = video.onwaiting = video.onpause = video.onended = video.onerror = video.ontimeupdate = video.onseeking = video.onseeked = video.onloadedmetadata = null;
     video.pause();
     video.removeAttribute('src');
     video.load();
@@ -4441,7 +4412,7 @@
       if (!raw) return;
       const arr = JSON.parse(raw);
       arr.forEach(e => {
-        blacklist.add(String(e.ratingKey));
+        if (String(e.ratingKey).startsWith("[")) blacklist.add(String(e.ratingKey));
         blacklistedItems.push({ ratingKey: e.ratingKey, title: e.title });
       });
     } catch(e) {}
@@ -4575,11 +4546,10 @@
   // background time doesn't count toward the 75% scrobble gate.
   document.addEventListener('visibilitychange', () => {
     if (!playbackTracker) return;
-    if (document.hidden) playbackTracker.onPause();
-    else playbackTracker.onResume();
+    playbackTracker.onVisibility();
   });
   // Flush a final timeline/scrobble check if the user closes or navigates away mid-program.
-  window.addEventListener('pagehide', () => { if (playbackTracker) playbackTracker.stop(); });
+  window.addEventListener('pagehide', () => stopVideo(true));
 
   function toggleMute() {
     const video = document.getElementById('plex-video');
@@ -4662,11 +4632,16 @@
 
   function toggleSyncActivity() {
     syncPlexActivity = !syncPlexActivity;
-    localStorage.setItem('plex90_sync_activity', syncPlexActivity);
+    localStorage.setItem('nostalgex_history_sync_v2', syncPlexActivity);
     // If we're turning it off mid-program, silently abandon the live tracker so no
     // further reports fire and no final "stopped" offset is written (which would still
-    // create a Continue Watching entry). Turning it on takes effect on the next program.
+    // change resume history). Turning it on starts tracking the current program.
     if (!syncPlexActivity && playbackTracker) { playbackTracker.abandon(); playbackTracker = null; }
+    if (syncPlexActivity && currentPlayingItem && !playbackTracker) {
+      const video = document.getElementById('plex-video');
+      playbackTracker = makePlaybackTracker({ ...currentPlayingItem, offsetSeconds: video.currentTime });
+      if (!video.paused && video.readyState >= 3) playbackTracker.onReady();
+    }
     updateSyncActivityControls();
   }
 
@@ -4756,6 +4731,7 @@
   }
 
   function clearSubtitleTracks() {
+    subtitleGeneration++;
     const video = document.getElementById('plex-video');
     activeSubtitleTracks.forEach(t => { try { t.remove(); } catch (e) {} });
     activeSubtitleBlobUrls.forEach(u => { try { URL.revokeObjectURL(u); } catch (e) {} });
@@ -4771,6 +4747,7 @@
   // crossorigin attribute (which would subject the media stream itself to CORS and could
   // break playback on servers that currently work without CORS headers).
   async function loadSubtitleForCurrentItem(item) {
+    const generation = subtitleGeneration;
     const autoForeign = item && shouldAutoEnableSubs(item.audioStreams || []);
     if ((!subtitlesEnabled && !autoForeign) || mediaBackend !== 'jellyfin') return;
     if (!document.fullscreenElement) return;  // fullscreen-only, matching tvOS
@@ -4781,6 +4758,7 @@
       const res = await fetch(buildSubtitleUrl(item, sub));
       if (!res.ok) return;
       const vtt = await res.text();
+      if (generation !== subtitleGeneration || currentPlayingItem !== item || !document.fullscreenElement) return;
       const url = URL.createObjectURL(new Blob([vtt], { type: 'text/vtt' }));
       const video = document.getElementById('plex-video');
       const track = document.createElement('track');
@@ -5037,8 +5015,8 @@
   // BLACKLIST
   // ══════════════════════════════════════
   function addToBlacklist(item) {
-    blacklist.add(String(item.ratingKey));
-    blacklistedItems.push({ ratingKey: item.ratingKey, title: item.title });
+    blacklist.add(mediaIdentity(item));
+    blacklistedItems.push({ ratingKey: mediaIdentity(item), title: item.title });
     saveBlacklist();
     applyBlacklistToChannels();
     renderBlacklistList();
@@ -5090,7 +5068,8 @@
     [...blacklistedItems].reverse().forEach(entry => {
       const row = document.createElement('div');
       row.className = 'blacklist-entry';
-      row.innerHTML = `<span>${escapeHtml(entry.title)}</span><span class="blacklist-remove" onclick="removeFromBlacklist('${escapeHtml(String(entry.ratingKey))}')">&#x2715;</span>`;
+      row.innerHTML = `<span>${escapeHtml(entry.title)}${String(entry.ratingKey).startsWith('[') ? '' : ' (select the library item again)'}</span><button type="button" class="blacklist-remove">&#x2715;</button>`;
+      row.querySelector("button").addEventListener("click", () => removeFromBlacklist(entry.ratingKey));
       el.appendChild(row);
     });
   }
@@ -5106,7 +5085,7 @@
         const q = input.value.trim().toLowerCase();
         if (q.length < 2) { hideBlacklistResults(); return; }
         const matches = allItemsCache
-          .filter(i => itemTitleHaystack(i).includes(q) && !blacklist.has(String(i.ratingKey)))
+          .filter(i => itemTitleHaystack(i).includes(q) && !blacklist.has(mediaIdentity(i)))
           .slice(0, 20);
         renderBlacklistResults(matches);
       }, 200);
@@ -5691,6 +5670,10 @@
     document.getElementById('config-overlay').classList.remove('open');
     configVisible = false;
 
+    stopVideo(true);
+    libraryGeneration++;
+    currentPlayingItem = null;
+    allItemsCache = [];
     plexToken = null;
     plexServerUrl = null;
     plexServerName = null;
@@ -5716,8 +5699,8 @@
 
     try { stopVideo(); } catch (e) { console.warn('stopVideo error:', e); }
 
-    // Clear channel data
-    CHANNELS.forEach(ch => {
+    // Clear visible and disabled bundle pools, so another account cannot reuse them.
+    new Set([...CHANNELS, ...allChannelsUnfiltered]).forEach(ch => {
       ch.itemPool = [];
       ch.schedule = [];
       ch.enabled = true;
@@ -5837,8 +5820,20 @@
   // tab closes. Every fresh visit therefore rescanned the whole library and the
   // TTL never once applied. Anything that ends a session has to clear this now
   // that it persists: see signOut().
-  function saveLibraryCache(items) {
-    const payload = { ts: Date.now(), url: plexServerUrl, items };
+  async function libraryCacheScope() {
+    const servers = selectedServers.length ? selectedServers : [{ url: plexServerUrl, token: plexToken }];
+    const material = JSON.stringify([mediaBackend, jellyfinUserId,
+      servers.map(s => [s.machineIdentifier || s.url, s.token]).sort((a, b) => String(a[0]).localeCompare(String(b[0])))]);
+    const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(material));
+    return Array.from(new Uint8Array(hash), b => b.toString(16).padStart(2, '0')).join('');
+  }
+  async function saveLibraryCache(items) {
+    const tokenAtStart = plexToken;
+    const generation = libraryGeneration;
+    const cleanItems = items.map(({ serverToken, ...item }) => item);
+    const scope = await libraryCacheScope();
+    if (!plexToken || tokenAtStart !== plexToken || generation !== libraryGeneration) return;
+    const payload = { version: 2, ts: Date.now(), scope, items: cleanItems };
     try {
       localStorage.setItem(LIBRARY_CACHE_KEY, JSON.stringify(payload));
       return;
@@ -5851,7 +5846,7 @@
       localStorage.setItem(LIBRARY_CACHE_KEY, JSON.stringify({
         ...payload,
         trimmed: true,
-        items: items.map(it => (it.summary ? { ...it, summary: '' } : it)),
+        items: cleanItems.map(it => (it.summary ? { ...it, summary: '' } : it)),
       }));
     } catch (e) {
       // Still too big, or storage is unavailable. Fall back to rescanning, which
@@ -5865,13 +5860,20 @@
     try { localStorage.removeItem(LIBRARY_CACHE_KEY); } catch (e) {}
   }
 
-  function loadLibraryCache(allowStale = false) {
+  async function loadLibraryCache(allowStale = false) {
     try {
       const raw = localStorage.getItem(LIBRARY_CACHE_KEY);
       if (!raw) return null;
       const parsed = JSON.parse(raw);
-      const { ts, url, items } = parsed;
-      if (url !== plexServerUrl) return null;
+      const { ts, items } = parsed;
+      if (parsed.version !== 2 || parsed.scope !== await libraryCacheScope()) return null;
+      const servers = selectedServers.length ? selectedServers : [{ url: plexServerUrl, token: plexToken }];
+      for (const item of items) {
+        const server = servers.find(s => (s.machineIdentifier || s.url) === (item.serverId || item.serverUrl))
+          || (mediaBackend === 'jellyfin' ? servers[0] : null);
+        if (!server) return null;
+        item.serverUrl = server.url; item.serverToken = server.token;
+      }
       const stale = Date.now() - ts > LIBRARY_CACHE_TTL;
       if (stale && !allowStale) return null;
       return { items, ts, stale };
@@ -5892,7 +5894,7 @@
     });
 
     allItemsCache = allItems;
-    if (!options.skipCacheSave) saveLibraryCache(allItems);
+    if (!options.skipCacheSave) saveLibraryCache(allItems).catch(() => console.warn('[Cache] Could not save library'));
     if (!options.skipManifestClear) NostalgexDailyManifest.clearManifests(manifestServerKey());
 
     const targets = allChannelsUnfiltered.filter(ch => poolIDs.has(ch.id));
@@ -5901,6 +5903,7 @@
     LL.setPhase('buildingChannels', buildAll ? 'Full lineup' : 'Enabled bundles');
 
     for (let i = 0; i < targets.length; i++) {
+      if (options.generation != null && options.generation !== libraryGeneration) return;
       const ch = targets[i];
       LL.state.channelBuildIndex = i + 1;
       LL.setPhase('buildingChannels', ch.name);
@@ -5945,7 +5948,7 @@
       allItemsCache = MB.itemsWithDisplayMetadata(allItemsCache);
       allChannelsUnfiltered.forEach(ch => {
         if (!ch.itemPool?.length) return;
-        ch.itemPool = ch.itemPool.map(item => allItemsCache.find(i => i.ratingKey === item.ratingKey) || item);
+        ch.itemPool = ch.itemPool.map(item => allItemsCache.find(i => mediaIdentity(i) === mediaIdentity(item)) || item);
       });
       applyBundleFilter();
       CHANNELS.forEach(ch => {
@@ -5960,9 +5963,23 @@
   }
 
   async function finalizeLibraryWithMusicBrainz(allItems, options = {}) {
+    if (options.generation != null && options.generation !== libraryGeneration) return [];
+    allItems = allItems.map(item => ({ ...item, serverUrl: item.serverUrl || plexServerUrl,
+      serverId: item.serverId || item.serverUrl || plexServerUrl,
+      itemKey: mediaIdentity({ ...item, serverUrl: item.serverUrl || plexServerUrl }) }));
+    // Migrate old single-server blacklist keys only when there is one unambiguous
+    // match. Retain ambiguous entries for explicit re-selection instead of silently
+    // excluding the same numeric key from every connected server.
+    for (const entry of blacklistedItems) {
+      if (String(entry.ratingKey).startsWith('[')) continue;
+      const matches = allItems.filter(item => String(item.ratingKey) === String(entry.ratingKey));
+      if (matches.length === 1) { entry.ratingKey = mediaIdentity(matches[0]); blacklist.add(entry.ratingKey); }
+    }
+    saveBlacklist();
     const LL = globalThis.NostalgexLibraryLoad;
     let working = applyMusicCacheToLibrary(allItems);
     await repopulateChannelsFromLibrary(working, options);
+    if (options.generation != null && options.generation !== libraryGeneration) return [];
     if (!options.background) startDeferredMusicEnrichmentIfNeeded(working);
     return working;
   }
@@ -5995,6 +6012,7 @@
   }
 
   async function fetchLibraryFromServer(options = {}) {
+    options = { ...options, generation: ++libraryGeneration };
     if (mediaBackend === 'jellyfin') return fetchJellyfinLibraryFromServer(options);
     return fetchPlexLibraryFromServer(options);
   }
@@ -6134,6 +6152,7 @@
                     year: show.ProductionYear || '',
                     contentRating: show.OfficialRating || ep.OfficialRating || '',
                     duration: durationMin,
+                    sourceDurationSeconds: ep.RunTimeTicks / 10000000,
                     ratingKey: ep.Id,
                     partKey: mi.msid,
                     container: mi.container,
@@ -6192,6 +6211,7 @@
               year,
               contentRating: jf.OfficialRating || '',
               duration: durationMin,
+              sourceDurationSeconds: jf.RunTimeTicks / 10000000,
               ratingKey: jf.Id,
               partKey: mi.msid,
               container: mi.container,
@@ -6221,10 +6241,13 @@
     const withTmdb = allItems.filter(i => i.tmdbID).length;
     console.log(`[Jellyfin] LIBRARY: ${allItems.length} items, ${withTmdb} with tmdbID`);
 
+    if (options.generation !== libraryGeneration) return;
     allItems = await finalizeLibraryWithMusicBrainz(allItems, {
+      generation: options.generation,
       buildAllChannels: buildAll,
       skipMarkComplete: background,
     });
+    if (options.generation !== libraryGeneration) return;
 
     if (!background) {
       LL.hide();
@@ -6333,7 +6356,7 @@
     let start = 0;
     while (true) {
       const url = `${server.url}/library/sections/${section.key}/all`
-        + `?X-Plex-Container-Start=${start}&X-Plex-Container-Size=${PLEX_PAGE_SIZE}`;
+        + `?includeGuids=1&X-Plex-Container-Start=${start}&X-Plex-Container-Size=${PLEX_PAGE_SIZE}`;
       const res = await fetch(url, {
         headers: { 'Accept': 'application/json', 'X-Plex-Token': server.token },
       });
@@ -6392,7 +6415,7 @@
                 showGenres.forEach(g => { discoveredGenres[g] = (discoveredGenres[g] || 0) + 1; });
 
                 try {
-                  const epRes = await fetch(`${server.url}/library/metadata/${show.ratingKey}/allLeaves`, {
+                  const epRes = await fetch(`${server.url}/library/metadata/${show.ratingKey}/allLeaves?includeGuids=1`, {
                     headers: { 'Accept': 'application/json', 'X-Plex-Token': server.token },
                   });
                   const epData = await epRes.json();
@@ -6427,9 +6450,16 @@
                       year: show.year || '',
                       contentRating: show.contentRating || ep.contentRating || '',
                       duration: durationMin,
+                      sourceDurationSeconds: ep.duration / 1000,
                       ratingKey: ep.ratingKey,
                       partKey: partKey,
                       container: container,
+                      mediaIndex: Math.max(0, (ep.Media || []).indexOf(epMedia)), partIndex: 0,
+                      videoCodec: epMedia?.videoCodec, audioCodec: epMedia?.audioCodec,
+                      audioChannels: epMedia?.audioChannels,
+                      videoProfile: epMedia?.videoProfile,
+                      bitDepth: epMedia?.Part?.[0]?.Stream?.find(x => x.streamType === 1)?.bitDepth,
+                      serverId: server.machineIdentifier || server.url,
                       genres: showGenres,
                       rating: show.rating || 0,
                       userRating: show.userRating || 0,
@@ -6440,7 +6470,7 @@
                       addedAt: ep.addedAt || 0,
                       studio: show.studio || '',
                       librarySource,
-                      tmdbID: CF ? CF.parseTmdbIdFromPlex(ep, true) : null,
+                      tmdbID: CF ? CF.parseTmdbIdFromPlex(show, false) : null,
                       serverUrl: server.url,
                       serverToken: server.token,
                     };
@@ -6515,9 +6545,16 @@
             year: item.year || '',
             contentRating: item.contentRating || '',
             duration: durationMin,
+            sourceDurationSeconds: item.duration / 1000,
             ratingKey: item.ratingKey,
             partKey: partKey,
             container: container,
+            mediaIndex: Math.max(0, (item.Media || []).indexOf(itemMedia)), partIndex: 0,
+            videoCodec: itemMedia?.videoCodec, audioCodec: itemMedia?.audioCodec,
+            audioChannels: itemMedia?.audioChannels,
+            videoProfile: itemMedia?.videoProfile,
+            bitDepth: itemMedia?.Part?.[0]?.Stream?.find(x => x.streamType === 1)?.bitDepth,
+            serverId: server.machineIdentifier || server.url,
             genres: genres,
             rating: item.rating || 0,
             userRating: item.userRating || 0,
@@ -6577,10 +6614,13 @@
 
     if (successCount === 0) throw new Error('All servers failed to scan');
 
+    if (options.generation !== libraryGeneration) return;
     let allItems = await finalizeLibraryWithMusicBrainz(merged, {
+      generation: options.generation,
       buildAllChannels: buildAll,
       skipMarkComplete: background,
     });
+    if (options.generation !== libraryGeneration) return;
 
     console.log('[Nostalgex] Channel population results:');
     CHANNELS.forEach(ch => {
@@ -6605,17 +6645,20 @@
   }
 
   async function fetchPlexLibrary() {
+    const generation = ++libraryGeneration;
     const LL = globalThis.NostalgexLibraryLoad;
     document.getElementById('plex-connect').style.display = 'none';
     document.getElementById('plex-waiting').classList.remove('active');
     document.getElementById('server-picker').classList.remove('active');
 
-    const cached = loadLibraryCache(true);
+    const cached = await loadLibraryCache(true);
+    if (generation !== libraryGeneration) return;
     if (cached && cached.items && cached.items.length > 0) {
       LL.show();
       LL.refreshStepRail(false);
       LL.setPhase('preparing', cached.stale ? 'Cached library' : 'Loading cache');
-      await finalizeLibraryWithMusicBrainz(cached.items, { buildAllChannels: LL.isFirstLibraryLoad() });
+      await finalizeLibraryWithMusicBrainz(cached.items, { generation, buildAllChannels: LL.isFirstLibraryLoad() });
+      if (generation !== libraryGeneration) return;
       LL.hide();
       const firstEnabled = CHANNELS.find(ch => ch.enabled);
       if (firstEnabled) switchChannel(firstEnabled.id);
@@ -6715,7 +6758,7 @@
     const now = ch.schedule[0];
 
     // Detect item transition — only then do the expensive full rebuild + guide re-render
-    const itemKey = now.ratingKey || now.title;
+    const itemKey = now.ratingKey ? mediaIdentity(now) : now.title;
     if (itemKey !== _lastTickItemKey) {
       _lastTickItemKey = itemKey;
       rebuildAllSchedules();

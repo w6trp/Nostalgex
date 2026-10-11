@@ -3,6 +3,63 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-10-11 (fork reliability branch)
+
+**Shipped.** Source changes prepared on `codex/reliability-and-plex-privacy` for
+review in the personal fork. No signed app, TestFlight upload or website deployment.
+Upstream main, license and attribution are preserved.
+
+**Changed.** Playback attempts now own their watchdog/cancellation work and guard
+callbacks by current player item, so superseded recovery cannot take over a new
+tune. Selected versions, multipart indices and exact source durations survive
+conversion and enrichment; parts share one tracker. Audio selection returns after
+recovery and capped fallback never increases the selected quality. Scheduled block
+deadlines retune against the authoritative guide. Diagnostic credentials are
+redacted before storage/logging, and old diagnostic rows are discarded.
+
+Reporting now uses actual playback state/position with ordered, acknowledged
+writes. A new explicit history/resume opt-in defaults off rather than inheriting
+the old ambiguous activity preference. Plex timeline uses POST and watched marking
+uses PUT with the rating key. No verified session-only mode is enabled: timeline
+updates may still change history/resume state. Unknown multipart totals are not
+reported as if an individual disc were the whole film.
+
+Server-qualified identities prevent collisions in pools, caches and browser
+schedules. Incomplete background refreshes preserve the working lineup. Calendar
+boundaries cover 23/25-hour days and partial blocks retain their source offsets.
+Canceled auth/enrichment cannot commit stale state. Top Shelf uses the item's own
+server, keeps token URLs out of shared snapshots, handles channel links and clears
+on sign-out. Movie/TV enrichment keys are distinct; remote cache v2 requires an
+explicit fork-owned table. Upstream telemetry identifiers are removed.
+
+Browser fixes cover failed-item rescheduling, stale async callbacks, codec-aware
+source selection, credential-free library caches and exit cleanup. Developer tools
+retain TLS checks, bind loopback by default and require explicit authenticated LAN
+access. They reuse the shared scheduling engine. Newsletter segment failures are
+surfaced. Apple release scripts require owner configuration and explicit upload.
+The CI simulator toolchain is pinned; fork testing/signing instructions and a
+remaining-concerns matrix are in `docs/FORK-TESTING.md` and `docs/FIX-STATUS.md`.
+
+**Verified locally.** JavaScript suite including 26 reliability regressions and
+Vite production build pass. Isolated native production-source checks pass: 27
+playback/source/quality checks, 9 diagnostic checks, 13 reporting scenarios and 24
+core scheduling/metadata/Top Shelf store assertions. Swift parsing, plist lint and
+diff checks pass. Native probes use synthetic data and shims; they do not validate
+AVPlayer, SwiftUI or Apple extension execution.
+
+**Half-done.** Full local NostalgexTests cannot start because only Command Line
+Tools are installed. Public-fork standard-runner CI is the next compilation check;
+its result is not yet established. Native hardware/server behavior is unverified.
+Time-restriction programming semantics and the credential recovery mirror remain
+unchanged pending a deliberate policy and durable-storage design. Advanced server
+track selection and complete device codec capabilities are not claimed solved.
+
+**Next.** Resolve any native CI failures, install the matching local Xcode/tvOS
+components, configure fork-owned signing identifiers, then pair and test an Apple
+TV. The owner must complete Apple account/agreements and choose the new product
+identity. History-free active-session reporting needs an explicitly authorized
+isolated server experiment before it can be enabled.
+
 ## 2026-10-09 (app)
 
 **Shipped.** Nothing to Apple. 1.0.24 (45) is still in TestFlight beta review.

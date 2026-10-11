@@ -29,7 +29,8 @@
   'use strict';
 
   const MANIFEST_PREFIX = 'plex90_manifest_';
-  const SCHEMA_VERSION = 1;
+  const SCHEMA_VERSION = 2;
+  const itemKey = item => item.itemKey || (item.serverId || item.serverUrl ? JSON.stringify([item.serverId || item.serverUrl, String(item.ratingKey)]) : item.ratingKey);
   const MASK64 = 0xFFFFFFFFFFFFFFFFn;
 
   /** Mirrors `splitmix64` in SchedulePoolOrdering.swift. */
@@ -267,7 +268,7 @@
   }
 
   function poolFingerprint(pool) {
-    const keys = pool.map(i => i.ratingKey).sort().join(',');
+    const keys = pool.map(item => JSON.stringify([itemKey(item), item.duration, item.addedAt, item.title, item.type])).sort().join(',');
     let h = 0;
     for (let i = 0; i < keys.length; i++) {
       h = ((h << 5) - h + keys.charCodeAt(i)) | 0;
@@ -323,11 +324,13 @@
   }
 
   function packDay(pool, dayStartSec, dayNumber, channelId, yesterdayAired, isPremiereChannel, yesterdayLastRatingKey) {
-    const dayEndSec = dayStartSec + 86400;
+    const nextDay = new Date(dayStartSec * 1000);
+    nextDay.setDate(nextDay.getDate() + 1);
+    const dayEndSec = nextDay.getTime() / 1000;
     const totalPoolSec = pool.reduce((s, i) => s + (i.duration || 0) * 60, 0);
     if (totalPoolSec <= 0) return [];
 
-    const unplayed = pool.filter(i => !yesterdayAired.has(i.ratingKey));
+    const unplayed = pool.filter(i => !yesterdayAired.has(itemKey(i)));
     // Interleave for variety, then slot this week's additions at the prime-time
     // anchor so they air while people are watching, then reunite multi-part
     // stories — in that order, so a just-added Part 1 drags its Part 2 with it.
@@ -345,7 +348,7 @@
     // guard whatever leads off today has no idea it might be the exact title that
     // finished seconds before midnight.
     if (yesterdayLastRatingKey && unplayedOrdered.length > 1 &&
-        unplayedOrdered[0].ratingKey === yesterdayLastRatingKey) {
+        itemKey(unplayedOrdered[0]) === yesterdayLastRatingKey) {
       unplayedOrdered.push(unplayedOrdered.shift());
     }
     const blocks = [];
@@ -355,8 +358,9 @@
       if (t >= dayEndSec) break;
       const dur = (item.duration || 0) * 60;
       if (dur <= 0) continue;
-      blocks.push({ ratingKey: item.ratingKey, startSec: t, endSec: t + dur });
-      t += dur;
+      const played = Math.min(dur, dayEndSec - t);
+      blocks.push({ ratingKey: itemKey(item), startSec: t, endSec: t + played, sourceOffsetSeconds: 0 });
+      t += played;
     }
 
     if (t < dayEndSec) {
@@ -381,7 +385,7 @@
       // Wraparound seam: the cycle can land on the very item that just played.
       if (orderedFull.length > 1) {
         const lastPlayed = blocks.length ? blocks[blocks.length - 1].ratingKey : yesterdayLastRatingKey;
-        if (lastPlayed && orderedFull[cycleIndex].ratingKey === lastPlayed) {
+        if (lastPlayed && itemKey(orderedFull[cycleIndex]) === lastPlayed) {
           cycleIndex = (cycleIndex + 1) % orderedFull.length;
           offsetInItem = 0;
         }
@@ -404,7 +408,7 @@
           offsetInItem = 0;
           continue;
         }
-        blocks.push({ ratingKey: item.ratingKey, startSec: t, endSec: t + playSec });
+        blocks.push({ ratingKey: itemKey(item), startSec: t, endSec: t + playSec, sourceOffsetSeconds: offsetInItem });
         t += playSec;
         if (offsetInItem + playSec >= fullDur) {
           idx++;
@@ -419,12 +423,12 @@
   }
 
   function resolveBlocks(storedBlocks, pool) {
-    const lookup = new Map(pool.map(i => [i.ratingKey, i]));
+    const lookup = new Map(pool.map(i => [itemKey(i), i]));
     return storedBlocks
       .map(b => {
         const item = lookup.get(b.ratingKey);
         if (!item) return null;
-        return { item, startSec: b.startSec, endSec: b.endSec };
+        return { item, startSec: b.startSec, endSec: b.endSec, offsetSeconds: b.sourceOffsetSeconds || 0 };
       })
       .filter(Boolean);
   }
@@ -442,7 +446,9 @@
     if (cached) return resolveBlocks(cached.blocks, validPool);
 
     const dayNumber = localDayNumber(atMs);
-    const yesterdayKey = localDayKey(dayStartSec * 1000 - 86400000);
+    const yesterday = new Date(dayStartSec * 1000);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayKey = localDayKey(yesterday.getTime());
     const yesterdayAired = airedRatingKeys(serverKey, channelId, yesterdayKey);
 
     const yesterdayLast = lastAiredRatingKey(serverKey, channelId, yesterdayKey);
@@ -472,6 +478,7 @@
   }
 
   const api = {
+    itemKey,
     getManifestBlocks,
     clearManifests,
     interleaveByShow,

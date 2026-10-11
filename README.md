@@ -108,14 +108,18 @@ All playback logs are prefixed with `[Plex90]`. Filter the Xcode console to see 
 
 ## Build it yourself (tvOS)
 
+Fork maintainers: see [fork testing and distribution](docs/FORK-TESTING.md) for
+signing, storage, device installation and the current validation limits. A device
+running tvOS 27 needs the matching Xcode 27 setup.
+
 You need Xcode 26 or newer and an Apple TV or the tvOS simulator. Open `Nostalgex/Nostalgex.xcodeproj`, pick your own team under Signing, and run the `Nostalgex` scheme. No API keys are required. The app connects to your server, builds channels from your library's own metadata, and plays.
 
 Two optional extras, both off unless you turn them on:
 
 | What | How to enable | What it adds |
 |---|---|---|
-| TMDB / OMDb / Supabase metadata | Set `TMDB_API_KEY`, `OMDB_API_KEY`, `SUPABASE_URL`, `SUPABASE_ANON_KEY` as environment variables in the Xcode scheme, or as `TMDBApiKey`, `OMDBApiKey`, `SupabaseURL`, `SupabaseAnonKey` in `Nostalgex/Info.plist`. Read in `Services/TMDBConfig.swift`. | Keyword and collection data for finer channel rules. Supabase is a cache keyed on TMDB ids; you can point it at your own project. |
-| TelemetryDeck | `TelemetryDeckAppID` in `Nostalgex/Info.plist`. Delete the key to turn it off. | Anonymous launch and playback counts. The App Store build has it on; your own build does not have to. |
+| TMDB / OMDb / Supabase metadata | Set `TMDB_API_KEY`, `OMDB_API_KEY`, `SUPABASE_URL`, `SUPABASE_ANON_KEY` as environment variables in the Xcode scheme, or as `TMDBApiKey`, `OMDBApiKey`, `SupabaseURL`, `SupabaseAnonKey` in `Nostalgex/Info.plist`. Read in `Services/TMDBConfig.swift`. | Keyword and collection data for finer channel rules. Local cache keys include media type and TMDB ID. Remote Supabase caching additionally requires SUPABASE_ENRICHMENT_V2_TABLE and a fork-owned composite-key table; see Nostalgex/docs/FORK-CONFIGURATION.md. |
+| TelemetryDeck | Set your own `TelemetryDeckAppID` in `Nostalgex/Info.plist` or `TELEMETRYDECK_APP_ID` environment variable. Neither is supplied by this fork. | Anonymous launch and playback counts. Disabled by default in this fork. |
 
 Never commit real keys. `.gitignore` already covers `.env`, `Secrets.plist` and `*.xcconfig` secrets.
 
@@ -127,7 +131,7 @@ The whole point of running your own server is knowing where your data goes, so h
 - **plex.tv** (Plex only). The PIN sign-in flow and server discovery. This is how every Plex client works.
 - **MusicBrainz.** Public metadata for the music video channels. No key, no account.
 - **TMDB, OMDb, Supabase.** Only if you build with keys, see above.
-- **TelemetryDeck.** Anonymous usage signals in the App Store build. No identifiers, no library contents, no server addresses. Off in your own build unless you keep the key.
+- **TelemetryDeck.** Anonymous usage signals in the App Store build. No identifiers, no library contents, no server addresses. Disabled in this fork unless you supply your own app identifier.
 
 The website and web tuner at nostalgex.app load one page analytics script (statsngraphs). The privacy policy at `/privacy` covers all of this in plain language.
 

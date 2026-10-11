@@ -22,6 +22,25 @@ final class PlexActivitySyncTests: XCTestCase {
         XCTAssertFalse(AppState.resolveSyncPlexActivity(stored: "yes"))
     }
 
+    func testLegacySyncDoesNotOptIntoNewHistoryPolicy() {
+        let defaults = UserDefaults.standard
+        let currentKey = AppState.syncPlexActivityDefaultsKey
+        let legacyKey = AppState.legacySyncPlexActivityDefaultsKey
+        let current = defaults.object(forKey: currentKey)
+        let legacy = defaults.object(forKey: legacyKey)
+        defer {
+            if let current { defaults.set(current, forKey: currentKey) }
+            else { defaults.removeObject(forKey: currentKey) }
+            if let legacy { defaults.set(legacy, forKey: legacyKey) }
+            else { defaults.removeObject(forKey: legacyKey) }
+        }
+        defaults.removeObject(forKey: currentKey)
+        defaults.set(true, forKey: legacyKey)
+        let state = AppState()
+        XCTAssertFalse(state.syncPlexActivity)
+        XCTAssertEqual(defaults.object(forKey: legacyKey) as? Bool, true)
+    }
+
     func testSyncPlexActivityToggle_persistsToUserDefaults() {
         let defaults = UserDefaults.standard
         let key = AppState.syncPlexActivityDefaultsKey

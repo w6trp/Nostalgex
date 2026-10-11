@@ -65,6 +65,7 @@ class AppState {
                 // Flush watch time before the tracker's own background handler zeroes it.
                 self?.emitPlaybackStoppedForActiveSession()
                 self?.playbackTracker?.onBackground()
+                self?.suspendPlayback()
                 // Then close out the foreground period. Ordering matters: watch time
                 // rides its own signal, and app.session.ended is the umbrella around
                 // it.
@@ -373,7 +374,10 @@ class AppState {
         }
     }
 
-    static let syncPlexActivityDefaultsKey = "nostalgex_sync_plex_activity"
+    // A new explicit choice is required for the clarified history-writing policy.
+    // Keep the legacy preference untouched for rollback; never migrate true implicitly.
+    static let legacySyncPlexActivityDefaultsKey = "nostalgex_sync_plex_activity"
+    static let syncPlexActivityDefaultsKey = "nostalgex_server_history_sync_v2"
 
     /// When true, playback is reported to the connected server so play counts grow
     /// and items can surface in Continue Watching. Off = watch privately.
@@ -388,10 +392,17 @@ class AppState {
     ) {
         didSet {
             UserDefaults.standard.set(syncPlexActivity, forKey: Self.syncPlexActivityDefaultsKey)
-            // Turning off mid-program: silently abandon the live tracker so the current
-            // item stops reporting immediately (no final "stopped" offset). The next item
-            // gets a tracker with no Plex API. Turning on takes effect on the next item.
-            if !syncPlexActivity { playbackTracker?.abandon() }
+            // Apply the choice to this item immediately. Turning off cancels queued
+            // writes without a final timeline, which itself could change resume state.
+            // Turning on explicitly opts in to history/resume effects, not just visibility.
+            if oldValue != syncPlexActivity {
+                let reportingBackend: (any MediaBackend)? = syncPlexActivity && !isDemoMode
+                    ? api(for: playbackTracker?.item.serverID) : nil
+                playbackTracker?.setReporters(
+                    plexAPI: reportingBackend as? PlexAPIService,
+                    watchReporter: reportingBackend as? any WatchActivityReporting
+                )
+            }
             if oldValue != syncPlexActivity {
                 Analytics.track(.settingChanged(key: "sync_plex_activity", value: syncPlexActivity ? "true" : "false"))
             }
@@ -517,6 +528,8 @@ class AppState {
         didSet { if currentItem?.ratingKey != oldValue?.ratingKey { refreshNowPlayingInfo() } }
     }
     var currentPartIndex: Int = 0
+    var currentPartBaseSeconds: Double = 0
+    var currentPartDurationsKnown = true
     var isFullScreen: Bool = false {
         didSet {
             if oldValue != isFullScreen {
@@ -576,6 +589,10 @@ class AppState {
     var loadGeneration: Int = 0
     var loadDebounceTimer: Timer?
     var playbackTracker: PlaybackTracker?
+    @ObservationIgnored var playbackWatchdogTask: Task<Void, Never>?
+    @ObservationIgnored var playbackRecoveryInFlight = false
+    @ObservationIgnored var musicEnrichmentTask: Task<Void, Never>?
+    var pendingDeepLinkChannelID: Int?
     var dailyRefreshTask: Task<Void, Never>?
     /// Unix seconds when the library was last loaded. Drives 24h rolling cache
     /// validity for both the on-disk snapshot and the background daily refresh.

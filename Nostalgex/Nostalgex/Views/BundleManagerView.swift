@@ -566,8 +566,10 @@ struct SettingsPageView: View {
             // stays in the app; on, it counts on the server they connected.
             if !appState.isDemoMode {
                 SettingsToggleRow(
-                    title: "REPORT PLAYBACK TO \(appState.backendDisplayName.uppercased())",
-                    subtitle: "Off by default. When on, a real watch here counts on your server.",
+                    title: "\(appState.backendDisplayName.uppercased()) HISTORY & RESUME SYNC",
+                    subtitle: appState.backendKind == .plex
+                        ? "Off by default. Also reports active sessions; can change watch history and resume points."
+                        : "Off by default. Reports activity, watch counts and resume points.",
                     // Warning stays full-brightness while the row's own text dims,
                     // so the side effect is legible exactly when it applies.
                     warning: appState.syncPlexActivity
@@ -581,6 +583,12 @@ struct SettingsPageView: View {
                 .focused($focusedItem, equals: "plex_sync")
                 .id("plex_sync")
                 .accessibilityHint("Updates play counts, resume points and Continue Watching in \(appState.backendDisplayName)")
+                if appState.backendKind == .plex {
+                    Text("Session-only reporting is not enabled: Plex activity updates may also change history and resume points. Leave sync off to avoid those writes.")
+                        .font(.system(size: 16))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             SettingsToggleRow(

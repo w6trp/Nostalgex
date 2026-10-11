@@ -483,8 +483,9 @@ struct EmbyAPIService: MediaBackend, WatchActivityReporting {
         mediaSourceId: String,
         playSessionId: String,
         positionTicks: Int,
-        event: MediaServerPlaybackReport.Event
-    ) async {
+        event: MediaServerPlaybackReport.Event,
+        isPaused: Bool
+    ) async -> Bool {
         await MediaServerPlaybackReport.post(
             serverURL: serverURL,
             authorization: Self.authorizationHeader(deviceID: deviceID, token: accessToken),
@@ -492,11 +493,12 @@ struct EmbyAPIService: MediaBackend, WatchActivityReporting {
             itemId: itemId,
             mediaSourceId: mediaSourceId,
             playSessionId: playSessionId,
-            positionTicks: positionTicks
+            positionTicks: positionTicks,
+            isPaused: isPaused
         )
     }
 
-    func markWatched(itemId: String) async {
+    func markWatched(itemId: String) async -> Bool {
         await MediaServerPlaybackReport.markPlayed(
             serverURL: serverURL,
             authorization: Self.authorizationHeader(deviceID: deviceID, token: accessToken),

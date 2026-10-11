@@ -17,9 +17,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const KEY_ID = "2Y8K8NTUV3";
-const ISSUER = "e9e9d3ec-0c04-4694-bcb9-55e8407672f6";
-const APP_ID = "6762563534";
+const KEY_ID = process.env.ASC_KEY_ID;
+const ISSUER = process.env.ASC_ISSUER_ID;
+const APP_ID = process.env.ASC_APP_ID;
+if (!KEY_ID || !ISSUER || !APP_ID) throw new Error('Configure ASC_KEY_ID, ASC_ISSUER_ID and ASC_APP_ID for your own reviewed app before using release tooling.');
 const KEY_PATH = path.join(os.homedir(), ".appstoreconnect", `AuthKey_${KEY_ID}.p8`);
 
 function token() {

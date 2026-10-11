@@ -5,14 +5,8 @@
 // Reads only the snapshot (built by build-snapshot.mjs) plus the manifest and
 // channels.json. No Plex, no TMDB calls.
 //
-// Honesty note, because it matters for how the numbers are read: the snapshot
-// is produced by the shared JS filter, not by the tvOS app. That filter cannot
-// evaluate networks / excludeNetworks / excludeKeywords / ratingMin, only
-// partially evaluates studios and productionCompanies, and keyword enrichment
-// runs for movies only. So "in zero channels" here is a LOWER BOUND on the
-// app's real coverage: every orphan is a candidate to check, not a confirmed
-// gap. Orphans that are explained by a tool blind spot are separated out so
-// they don't get mistaken for real gaps.
+// Shared rule evaluation is exact; snapshot metadata and enrichment are not
+// necessarily identical to the app. Orphans are diagnostic candidates only.
 
 import { unsupportedRulesFor, partialRulesFor, itemPasses } from "./channels.mjs";
 
@@ -22,7 +16,7 @@ const LIMITATION_BLIND_SPOT = "blind-spot-channel";
 // Rules this tool cannot evaluate. If an orphan passes a channel once these
 // are removed from that channel's rules, the app may well pool it there, so
 // it is a tool limitation, not a real gap.
-const BLIND_RULE_KEYS = ["networks", "excludeNetworks", "excludeKeywords", "ratingMin"];
+const BLIND_RULE_KEYS = ["networks", "productionCompanies", "imdbRatingMin", "imdbVotesMin", "rtScoreMin", "metacriticMin", "wonOscar"];
 
 function blindSpotChannelsFor(item, cfgChannels, manifest, nowSec) {
   const hits = [];
@@ -49,9 +43,9 @@ const REASONS = [
   { id: "no-year",      label: "No year in Plex",               test: (it) => !it.year,
     hint: "Decade channels (80s, 90s…) need a year. Fix the match or edit the year in Plex." },
   { id: LIMITATION_TV_KEYWORDS, label: "TV item: tool has no keyword data", test: (it) => it.type === "episode" && !(it.tmdbKeywords && it.tmdbKeywords.length),
-    hint: "TOOL LIMITATION, not necessarily a real gap. build-snapshot only fetches TMDB keywords for movies, so keyword-driven TV channels under-populate here. The app may well pull this in.", limitation: true },
+    hint: "TOOL LIMITATION, not necessarily a real gap. This item has no TV keywords in the snapshot. Check whether TMDB enrichment ran successfully; it supports both movies and shows. The app may well pull this in.", limitation: true },
   { id: LIMITATION_BLIND_SPOT, label: "Would pass a channel this tool can't evaluate", test: (it) => Boolean(it._blindSpot && it._blindSpot.length),
-    hint: "TOOL LIMITATION. Once the networks / ratingMin / excludeKeywords rules are set aside, this item passes at least one channel that uses them. The app evaluates those rules with TMDB/OMDb data this tool doesn't have, so it is probably pooled there. The channels are listed per item.", limitation: true },
+    hint: "TOOL LIMITATION. Once the enrichment-dependent rules are set aside, this item passes at least one channel that uses them. The app evaluates those rules with TMDB/OMDb data this tool doesn't have, so its membership needs verification against the app. The channels are listed per item.", limitation: true },
   { id: "no-genre-match", label: "Has metadata, matched nothing", test: () => true,
     hint: "Item has an id, genres and a year but no channel's rules or manifest claims accept it. Either the lineup has no home for this kind of item, or a rule is tighter than intended." },
 ];

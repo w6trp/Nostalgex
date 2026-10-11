@@ -45,6 +45,16 @@ struct RootView: View {
             PlayerView()
                 .environment(appState)
         }
+        .onOpenURL { url in
+            guard url.scheme?.lowercased() == "nostalgex", url.host == "channel",
+                  let id = Int(url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))) else { return }
+            appState.pendingDeepLinkChannelID = id
+            consumePendingChannelLink()
+        }
+        .onChange(of: appState.channels.map(\.id)) { _, _ in
+            appState.refreshTopShelfSnapshot()
+            consumePendingChannelLink()
+        }
         .onChange(of: appState.playbackState) { _, newState in
             // Disable tvOS screensaver/idle timer during active playback.
             // Without this, the Apple TV screensaver fires even while video is running.
@@ -78,6 +88,15 @@ struct RootView: View {
                 appState.startDailyRefresh()
             }
         }
+    }
+
+    private func consumePendingChannelLink() {
+        guard let id = appState.pendingDeepLinkChannelID,
+              let channel = appState.channels.first(where: { $0.id == id }) else { return }
+        appState.pendingDeepLinkChannelID = nil
+        navigationPath = NavigationPath()
+        appState.selectChannel(channel)
+        appState.isFullScreen = true
     }
 
     /// UserDefaults key that flips from missing → `true` on the first launch of an

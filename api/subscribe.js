@@ -64,7 +64,8 @@ async function handleExisting(apiKey, email, segmentId, props) {
   const encoded = encodeURIComponent(email);
   // Idempotent. A contact who signed up for another list on this Resend account
   // still has to land in the Nostalgex segment.
-  await resend(apiKey, 'POST', `/contacts/${encoded}/segments/${segmentId}`);
+  const joined = await resend(apiKey, 'POST', `/contacts/${encoded}/segments/${segmentId}`);
+  if (!joined.ok) throw new Error('Could not join subscription segment');
 
   if (!props.signup_source) return;
   const existing = await resend(apiKey, 'GET', `/contacts/${encoded}`);
@@ -115,7 +116,7 @@ export default async function handler(req, res) {
     }
 
     if (isDuplicate(created)) {
-      await handleExisting(apiKey, email, segmentId, props).catch(() => {});
+      await handleExisting(apiKey, email, segmentId, props);
       return res.status(200).json({ ok: true });
     }
 
