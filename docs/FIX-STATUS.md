@@ -35,8 +35,9 @@ source-selection behavior. Swift syntax checks do not type-check the complete
 tvOS app. [CI run 38155433349](https://github.com/w6trp/Nostalgex/actions/runs/38155433349) compiled source commit
 `3cf55f1072c4ddf6e1e711b0507d0990411f1143` with Xcode 26.6 and completed
 NostalgexTests: 464 passed, 2 opt-in live harnesses skipped, none failed. Web checks
-and build also passed. Local Xcode and real-device tests are still needed. No real
-user's media or watch state was used.
+and build also passed. The CouchWave identity change subsequently passed local Xcode
+27.0 device compilation and the tvOS 27 simulator suite (464 passed, 2 skipped).
+Signed physical-device tests remain pending. No real user's media or watch state was used.
 
 See the latest [development log](DEVLOG.md) for measured results and
 [fork testing guide](FORK-TESTING.md) for reproduction and device setup.
@@ -47,7 +48,7 @@ See the latest [development log](DEVLOG.md) for measured results and
   mode in the documented timeline API. Leave history sync off; a future experiment
   requires explicitly authorized disposable data and before/after server checks.
 - **Native integration:** AVPlayer behavior, callback races, server negotiation,
-  audio/subtitle output, remote focus and Top Shelf rendering still need Xcode and
+  audio/subtitle output, remote focus and Top Shelf rendering still need
   physical-device validation. Offline checks do not establish codec support on
   every Apple TV model.
 - **Time restrictions:** upstream rules use the current clock and retain the
@@ -60,8 +61,10 @@ See the latest [development log](DEVLOG.md) for measured results and
 - **Advanced track/capability support:** arbitrary server-side audio/subtitle burn
   selection and a complete profile/level/chroma/HDR capability matrix remain
   enhancements. Local controls can choose only tracks actually provided.
-- **Fork identity and signing:** choose a final name and configure owner-owned
-  bundle IDs, App Group, URL scheme and Apple signing team before distribution.
-  No name availability or trademark clearance has been performed.
+- **Fork identity and signing:** CouchWave is the selected native beta name. Separate
+  bundle IDs, App Group, keychain service and URL scheme are configured. The owner
+  must still select the Apple signing team and verify provisioning. Preliminary
+  name/domain collision screening was performed; no trademark clearance or name
+  reservation is claimed.
 - **Optional services:** no remote database migration, paid enrollment, signing
   credential creation, TestFlight upload or production web deployment was done.

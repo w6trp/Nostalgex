@@ -3,6 +3,18 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-10-11 (CouchWave beta identity)
+
+**Shipped.** No signed build, TestFlight upload or website deployment. Changes remain on `codex/reliability-and-plex-privacy` for the personal fork.
+
+**Changed.** The native beta is named CouchWave, with its own bundle IDs, App Group, keychain service, URL scheme and media-server client identity. A code-rendered wordmark and beta artwork replace upstream branding in the Apple TV interface. Upstream rating links are hidden until the fork has its own App Store record. Upstream signing team and export profiles are replaced with explicit owner setup requirements. MIT license and attribution remain, including a visible attribution in settings. Internal project/module names and the historical website remain unchanged for upstream compatibility.
+
+**Validation.** Local Xcode 27.0 compiled the unsigned physical-tvOS target. The tvOS 27 simulator suite passed 464 tests; 2 opt-in live-server tests were skipped, with no failures. Built bundle IDs and the CouchWave display name/URL scheme were inspected. No live server state was tested or changed.
+
+**Half-done.** Apple signing and physical-device pairing/installation remain unverified. Beta artwork is provisional. The website and browser tuner retain their upstream identity pending a separate web release.
+
+**Next.** Select the owner's signing team and verify provisioning for both app and Top Shelf. Pair the intended Apple TV, install the approved development build, and perform hardware acceptance with history/resume reporting left off.
+
 ## 2026-10-11 (fork reliability branch)
 
 **Shipped.** Source changes prepared on `codex/reliability-and-plex-privacy` for

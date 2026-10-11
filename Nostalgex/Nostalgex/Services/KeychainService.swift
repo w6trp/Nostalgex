@@ -11,7 +11,7 @@ import os
 /// tvOS (no user-visible filesystem, no backups the user can browse) the mirror's exposure
 /// is negligible next to the cost of asking someone to sign in again.
 enum KeychainService {
-    private static let serviceName = "com.muellhaus.nostalgex"
+    private static let serviceName = "io.github.w6trp.couchwave"
 
     /// Set when a write could not be read back anywhere. Surfaced so a session that will
     /// not survive relaunch is diagnosable rather than silently costing the user their sign-in.

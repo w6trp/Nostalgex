@@ -30,26 +30,32 @@ struct SettingsPageView: View {
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 48) {
 
-                        VStack(alignment: .leading, spacing: 20) {
-                            sectionHeader("SUPPORT NOSTALGEX", subtitle: "Star ratings help other households find Nostalgex")
+                        if let productPage = AppStoreLink.productPage {
+                            VStack(alignment: .leading, spacing: 20) {
+                                sectionHeader("SUPPORT COUCHWAVE", subtitle: "Star ratings help other households find CouchWave")
 
-                            SettingsToggleRow(
-                                title: "RATE NOSTALGEX",
-                                subtitle: "Opens the App Store on your Apple TV",
-                                isOn: true,
-                                isFocused: focusedItem == "rate",
-                                showToggle: false
-                            ) {
-                                Analytics.track(.rateTapped)
-                                openURL(AppStoreLink.productPage)
+                                SettingsToggleRow(
+                                    title: "RATE COUCHWAVE",
+                                    subtitle: "Opens the App Store on your Apple TV",
+                                    isOn: true,
+                                    isFocused: focusedItem == "rate",
+                                    showToggle: false
+                                ) {
+                                    Analytics.track(.rateTapped)
+                                    openURL(productPage)
+                                }
+                                .focused($focusedItem, equals: "rate")
+                                .id("rate")
+                                .accessibilityHint("Opens CouchWave in the App Store to leave a star rating")
+
                             }
-                            .focused($focusedItem, equals: "rate")
-                            .id("rate")
-                            .accessibilityHint("Opens Nostalgex in the App Store to leave a star rating")
 
+                            settingsDivider
                         }
 
-                        settingsDivider
+                        Text("CouchWave is based on Nostalgex by Chad Mueller. Licensed under MIT.")
+                            .font(.system(size: 18))
+                            .foregroundStyle(.secondary)
 
                         // Connection
                         connectionSection

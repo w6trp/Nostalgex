@@ -29,7 +29,7 @@ actor DeezerService {
     }
 
     private static let baseURL = "https://api.deezer.com"
-    private static let userAgent = "Nostalgex/1.0.23 (https://www.nostalgex.app)"
+    private static let userAgent = "CouchWave/1.0 (https://github.com/w6trp/Nostalgex)"
     private static let session: URLSession = {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 15

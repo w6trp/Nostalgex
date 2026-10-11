@@ -31,10 +31,10 @@ struct PlexAPIService: MediaBackend {
             "Accept": "application/json",
             "X-Plex-Token": token,
             "X-Plex-Client-Identifier": clientID,
-            "X-Plex-Product": "Nostalgex",
+            "X-Plex-Product": "CouchWave",
             "X-Plex-Platform": "tvOS",
             "X-Plex-Device": "Apple TV",
-            "X-Plex-Device-Name": "Nostalgex",
+            "X-Plex-Device-Name": "CouchWave",
         ]
     }
 
@@ -733,10 +733,10 @@ struct PlexAPIService: MediaBackend {
             .init(name: "X-Plex-Session-Identifier", value: sessionID),
             .init(name: "X-Plex-Token",              value: token),
             .init(name: "X-Plex-Client-Identifier",  value: clientID),
-            .init(name: "X-Plex-Product",            value: "Nostalgex"),
+            .init(name: "X-Plex-Product",            value: "CouchWave"),
             .init(name: "X-Plex-Platform",           value: "tvOS"),
             .init(name: "X-Plex-Device",             value: "Apple TV"),
-            .init(name: "X-Plex-Device-Name",        value: "Nostalgex"),
+            .init(name: "X-Plex-Device-Name",        value: "CouchWave"),
         ]
         let overrides = PlaybackSoak.queryOverrides
         guard !overrides.isEmpty else { return items }
@@ -1137,10 +1137,10 @@ struct PlexAPIService: MediaBackend {
         [
             "Accept": "application/json",
             "X-Plex-Client-Identifier": clientID,
-            "X-Plex-Product": "Nostalgex",
+            "X-Plex-Product": "CouchWave",
             "X-Plex-Platform": "tvOS",
             "X-Plex-Device": "Apple TV",
-            "X-Plex-Device-Name": "Nostalgex",
+            "X-Plex-Device-Name": "CouchWave",
         ]
     }
 

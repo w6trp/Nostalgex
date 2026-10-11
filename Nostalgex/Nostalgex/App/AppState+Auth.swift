@@ -591,7 +591,7 @@ extension AppState {
         if let urlError = error as? URLError {
             switch urlError.code {
             case .appTransportSecurityRequiresSecureConnection:
-                return "tvOS blocked the plain http:// address (ATS error -1022). Update Nostalgex, or use https:// if you are on an older build."
+                return "tvOS blocked the plain http:// address (ATS error -1022). Update CouchWave, or use https:// if you are on an older build."
             case .cannotFindHost, .dnsLookupFailed:
                 return "Could not find that host. Check the address."
             case .cannotConnectToHost:

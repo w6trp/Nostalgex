@@ -32,7 +32,7 @@ struct TopShelfSnapshot: Codable {
 enum TopShelfStore {
     /// Must match the App Group added to both the app and the extension in
     /// Signing and Capabilities.
-    static let appGroupID = "group.com.muellhaus.nostalgex"
+    static let appGroupID = "group.io.github.w6trp.couchwave"
     private static let filename = "topshelf.json"
     private static var imageTask: Task<Void, Never>?
     private static var revision = 0

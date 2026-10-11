@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CFBundleDisplayName</key>
+	<string>CouchWave Top Shelf</string>
 	<!-- Xcode's generated Info.plist adds this for the app target but not for an
 	     extension target, and App Store validation rejects the whole bundle
 	     without it: "has a 64-bit architecture slice, so you must include the

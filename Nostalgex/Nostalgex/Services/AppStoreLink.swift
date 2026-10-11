@@ -1,11 +1,10 @@
 import Foundation
 
-/// Apple TV App Store URLs for Nostalgex (tvOS supports star ratings only — no written reviews).
+/// Rating links remain hidden until this fork has its own App Store record.
 enum AppStoreLink {
-    static let appID = "6762563534"
-
-    /// Opens the Nostalgex product page in the tvOS App Store.
-    static var productPage: URL {
-        URL(string: "https://apps.apple.com/app/id\(appID)")!
+    static var productPage: URL? {
+        guard let appID = Bundle.main.object(forInfoDictionaryKey: "CouchWaveAppStoreID") as? String,
+              !appID.isEmpty, appID.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
+        return URL(string: "https://apps.apple.com/app/id\(appID)")
     }
 }

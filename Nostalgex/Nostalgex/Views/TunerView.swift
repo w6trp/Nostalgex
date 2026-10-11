@@ -183,9 +183,7 @@ private struct NavBar: View {
     var body: some View {
         HStack(alignment: .center, spacing: 0) {
             // Logo
-            Image("NostalgexLogo")
-                .resizable()
-                .scaledToFit()
+            CouchWaveWordmark()
                 .frame(height: 80)
                 .padding(.leading, 40)
 

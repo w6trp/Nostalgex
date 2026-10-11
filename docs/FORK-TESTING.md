@@ -7,6 +7,8 @@ upstream attribution when changing the product name or distributing a build.
 
 ## Current validation boundary
 
+The CouchWave beta also passed local Xcode 27.0 device compilation and the tvOS 27 simulator suite (464 passed, 2 opt-in live harnesses skipped). The physical-device build is unsigned. Bundle identifiers and URL scheme were verified in the built product; signing and hardware playback remain unverified.
+
 The reliability branch passed [hosted CI](https://github.com/w6trp/Nostalgex/actions/runs/38155433349) on source commit
 `3cf55f1072c4ddf6e1e711b0507d0990411f1143`: Xcode 26.6 compiled the application
 and completed NostalgexTests on an Apple TV simulator (464 passed, 2 opt-in live
@@ -63,9 +65,9 @@ npm run build
 1. Sign in to the intended Apple Account in Xcode. Xcode shows the available team
    and whether it is a Personal Team. An old email address alone cannot establish
    paid membership status; the developer account page shows current membership.
-2. Choose a fork-owned app bundle ID, extension bundle ID, App Group and URL scheme.
-   Update both app and Top Shelf entitlements and the shared group lookup together.
-   Select the owner's signing team for both targets. Never use the upstream team
+2. CouchWave uses app ID `io.github.w6trp.couchwave`, extension ID
+   `io.github.w6trp.couchwave.TopShelf`, App Group `group.io.github.w6trp.couchwave`
+   and URL scheme `couchwave`. Select the owner's signing team for both targets. Never use the upstream team
    or assume the upstream App Group can be provisioned by another account.
 3. Pair the Apple TV in Xcode's device interface while the Mac and TV are on the
    same network. Complete the pairing code and device prompts on the TV. Network
@@ -131,3 +133,7 @@ side effects.
 
 See [fork service configuration](../Nostalgex/docs/FORK-CONFIGURATION.md) for
 telemetry and optional metadata-cache isolation.
+
+## CouchWave beta identity
+
+The internal project/scheme/module and app executable still use the upstream Nostalgex name. The installed display name is CouchWave, and its bundle ID, keychain service, App Group, links and media-server client names are independent. A code-rendered beta wordmark and icon replace upstream branding in the Apple TV UI. These identifiers are source configuration, not proof of Apple registration or successful signing. No domain has been registered.

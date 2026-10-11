@@ -26,7 +26,7 @@ actor MusicBrainzService {
     }()
 
     private static let baseURL = "https://musicbrainz.org/ws/2"
-    private static let userAgent = "Nostalgex/1.0.2 (https://www.nostalgex.app)"
+    private static let userAgent = "CouchWave/1.0 (https://github.com/w6trp/Nostalgex)"
 
     private var lastRequestAt: Date = .distantPast
 

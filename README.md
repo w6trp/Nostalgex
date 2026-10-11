@@ -1,3 +1,13 @@
+# CouchWave
+
+CouchWave is a personal fork of [Nostalgex by Chad Mueller](https://github.com/chadMueller/Nostalgex), a retro TV guide for Plex, Jellyfin and Emby. Upstream history, MIT license and attribution are preserved.
+
+The Apple TV beta has its own app identity, wordmark, icon and server client name. It is not published on the App Store or TestFlight. See [fork testing](docs/FORK-TESTING.md) for local build and signing instructions. The internal Xcode project, module and scheme remain named `Nostalgex` to keep upstream merges and tests straightforward. Historical website assets and the browser tuner retain their upstream branding pending a separate web release.
+
+## Upstream reference
+
+The original README below describes **upstream Nostalgex**, including its screenshots, distribution links and community. Those links do not install CouchWave.
+
 # Nostalgex
 
 A free, open source retro TV channel guide for your own Plex, Jellyfin or Emby server.

@@ -46,7 +46,7 @@ struct RootView: View {
                 .environment(appState)
         }
         .onOpenURL { url in
-            guard url.scheme?.lowercased() == "nostalgex", url.host == "channel",
+            guard url.scheme?.lowercased() == "couchwave", url.host == "channel",
                   let id = Int(url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))) else { return }
             appState.pendingDeepLinkChannelID = id
             consumePendingChannelLink()
@@ -165,9 +165,7 @@ struct LoadingView: View {
     /// headline, no empty progress — a short wait should look deliberate.
     private var splashBody: some View {
         VStack(spacing: 26) {
-            Image("NostalgexLogo")
-                .resizable()
-                .scaledToFit()
+            CouchWaveWordmark()
                 .frame(maxWidth: 460)
 
             Text(String(repeating: "\u{25A0}", count: 3))
@@ -183,9 +181,7 @@ struct LoadingView: View {
 
     private var fullLoadBody: some View {
         VStack(spacing: 28) {
-            Image("NostalgexLogo")
-                .resizable()
-                .scaledToFit()
+            CouchWaveWordmark()
                 .frame(maxWidth: 500)
                 .padding(.bottom, 20)
 
@@ -438,16 +434,14 @@ struct ServerPickerView: View {
             HStack(alignment: .center, spacing: 80) {
                 // Left: branding + explanation
                 VStack(alignment: .leading, spacing: 28) {
-                    Image("NostalgexLogo")
-                        .resizable()
-                        .scaledToFit()
+                    CouchWaveWordmark()
                         .frame(maxWidth: 440)
 
                     Text("CHOOSE YOUR LIBRARIES")
                         .font(.custom("DMMono-Medium", size: 40))
                         .foregroundStyle(.white.opacity(0.9))
 
-                    Text("Your account can reach more than one Plex server. Pick which libraries Nostalgex should build channels from. You can change this later in Settings.")
+                    Text("Your account can reach more than one Plex server. Pick which libraries CouchWave should build channels from. You can change this later in Settings.")
                         .font(.custom("DMMono-Regular", size: 22))
                         .foregroundStyle(.white.opacity(0.45))
                         .multilineTextAlignment(.leading)
@@ -565,9 +559,7 @@ struct EmptyChannelsView: View {
         ZStack {
             Color.black.ignoresSafeArea()
             VStack(spacing: 32) {
-                Image("NostalgexLogo")
-                    .resizable()
-                    .scaledToFit()
+                CouchWaveWordmark()
                     .frame(maxWidth: 540)
 
                 if hasError {
