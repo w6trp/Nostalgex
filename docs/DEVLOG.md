@@ -47,15 +47,20 @@ core scheduling/metadata/Top Shelf store assertions. Swift parsing, plist lint a
 diff checks pass. Native probes use synthetic data and shims; they do not validate
 AVPlayer, SwiftUI or Apple extension execution.
 
-**Half-done.** Full local NostalgexTests cannot start because only Command Line
-Tools are installed. Public-fork standard-runner CI is the next compilation check;
-its result is not yet established. Native hardware/server behavior is unverified.
+**Verified in CI.** [Run 38155433349](https://github.com/w6trp/Nostalgex/actions/runs/38155433349) passed on source commit
+`3cf55f1072c4ddf6e1e711b0507d0990411f1143`: Xcode 26.6 compiled the app and
+ran NostalgexTests on the Apple TV simulator, with 464 passed and 2 opt-in live
+harnesses skipped. Web tests and production build passed too. Standard public
+GitHub-hosted runners were used; no paid runner or artifact upload was configured.
+
+**Half-done.** Full local tests cannot start because only Command Line Tools are
+installed. Native hardware/server behavior is unverified.
 Time-restriction programming semantics and the credential recovery mirror remain
 unchanged pending a deliberate policy and durable-storage design. Advanced server
 track selection and complete device codec capabilities are not claimed solved.
 
-**Next.** Resolve any native CI failures, install the matching local Xcode/tvOS
-components, configure fork-owned signing identifiers, then pair and test an Apple
+**Next.** Install the matching local Xcode/tvOS components, configure fork-owned
+signing identifiers, then pair and test an Apple
 TV. The owner must complete Apple account/agreements and choose the new product
 identity. History-free active-session reporting needs an explicitly authorized
 isolated server experiment before it can be enabled.

@@ -1,7 +1,7 @@
 # Reliability branch status
 
 Branch: `codex/reliability-and-plex-privacy`.
-This is an implementation and offline-validation checkpoint, not a signed release
+This is an implementation and CI-validation checkpoint, not a signed release
 or a claim that every review concern has been resolved on hardware.
 
 ## Implemented fixes
@@ -32,8 +32,11 @@ Offline checks use synthetic media and fake transports. The JavaScript test suit
 and Vite production build run locally. Native Foundation/CryptoKit probes execute
 production or directly extracted pure code for scheduling, metadata, tracker and
 source-selection behavior. Swift syntax checks do not type-check the complete
-tvOS app. Required full NostalgexTests, simulator and real-device tests still need
-Xcode and the tvOS components. No real user's media or watch state was used.
+tvOS app. [CI run 38155433349](https://github.com/w6trp/Nostalgex/actions/runs/38155433349) compiled source commit
+`3cf55f1072c4ddf6e1e711b0507d0990411f1143` with Xcode 26.6 and completed
+NostalgexTests: 464 passed, 2 opt-in live harnesses skipped, none failed. Web checks
+and build also passed. Local Xcode and real-device tests are still needed. No real
+user's media or watch state was used.
 
 See the latest [development log](DEVLOG.md) for measured results and
 [fork testing guide](FORK-TESTING.md) for reproduction and device setup.

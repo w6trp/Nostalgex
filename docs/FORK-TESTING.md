@@ -7,10 +7,12 @@ upstream attribution when changing the product name or distributing a build.
 
 ## Current validation boundary
 
-The reliability branch has source-level and isolated regression checks. Full
-NostalgexTests, simulator playback and signed-device testing require full Xcode;
-Command Line Tools alone cannot perform those checks. Do not treat an isolated
-Swift probe or a JavaScript build as a successful tvOS build.
+The reliability branch passed [hosted CI](https://github.com/w6trp/Nostalgex/actions/runs/38155433349) on source commit
+`3cf55f1072c4ddf6e1e711b0507d0990411f1143`: Xcode 26.6 compiled the application
+and completed NostalgexTests on an Apple TV simulator (464 passed, 2 opt-in live
+harnesses skipped). Web checks and Vite build passed. This validates compilation
+and the unit suite, not real media playback or signed installation. Local tests
+and device work still require full Xcode; Command Line Tools alone are insufficient.
 
 ## Toolchain and storage
 
