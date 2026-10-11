@@ -1,4 +1,4 @@
-# Nostalgex Channel Guide
+# CouchWave Channel Guide
 
 <!-- GENERATED FILE — do not edit by hand. Run `npm run channels:doc` after any
      channels.json change. Source: scripts/render-channels-doc.mjs -->
@@ -52,7 +52,7 @@ only name the channel's own defining genre.
 
 | Bundle | Bundle ID | Channels | Range | Description |
 |---|---|---|---|---|
-| NOSTALGEX | `nostalgex` | 19 | CH 1–19 | The 80s and 90s. All retro, all the time |
+| COUCHWAVE | `nostalgex` | 19 | CH 1–19 | The 80s and 90s. All retro, all the time |
 | KIDZ ZONE | `kids` | 15 | CH 20–34 | Disney, Nickelodeon, Pixar, and more |
 | PRIME TIME | `essentials` | 15 | CH 40–54 | Everyday favorites and feel-good viewing |
 | MARQUEE | `premium` | 11 | CH 59–69 | Premium channels |
@@ -81,7 +81,7 @@ the year.
 
 | Locked to | Matches on | Notes |
 |---|---|---|
-| CH130 HOLIDAZE (id 130)<br>CH131 SANTA'S LIST (id 409)<br>CH132 NAUGHTY LIST (id 410)<br>CH133 NOSTALGEX CHRISTMAS (id 411)<br>CH134 HALLMARK (id 412) | genres Holiday/Christmas, 19 title keywords, 49 editorial titles |  |
+| CH130 HOLIDAZE (id 130)<br>CH131 SANTA'S LIST (id 409)<br>CH132 NAUGHTY LIST (id 410)<br>CH133 COUCHWAVE CHRISTMAS (id 411)<br>CH134 HALLMARK (id 412) | genres Holiday/Christmas, 19 title keywords, 49 editorial titles |  |
 | id 32 (missing)<br>CH59 ANIME (id 60) | genres Anime, TMDB manifest claim (`manifestExclusive`) | Anime is claimed by genre `Anime` OR by a TMDB-manifest claim (`manifestExclusive`), so manifest-claimed anime is blocked from the other animation channels even when Plex only tags it "Animation". The manifest builder gates these channels with `requireGenres: ["Animation"]` + `requireOriginalLanguage: ["ja"]` + `autoSweepCollections: false` so TMDB similar/collection noise cannot be claimed — that blocks live-action (Spy Kids) AND Western animation (An American Tail, Avatar, Castlevania). Strict Japanese anime only. Re-run the keyword tuner to apply changes. |
 | CH139 SCREAM ADULTS (id 132) | 2 title keywords, 8 editorial titles | Halloween horror is claimed by a title allowlist plus the manifest, so the seasonal channel owns it rather than the year-round horror channels. |
 
@@ -89,7 +89,7 @@ the year.
 
 ## Channels by bundle
 
-### NOSTALGEX · CH 1–19
+### COUCHWAVE · CH 1–19
 
 _The 80s and 90s. All retro, all the time_
 
@@ -97,7 +97,7 @@ _The 80s and 90s. All retro, all the time_
 |---|---|---|---|---|---|---|
 | 1 | `1` | REWATCHABLES MOVIES | `#FFE500` | Movies | 5 | rewatched (viewCount ≥ 3) |
 | 2 | `2` | REWATCHABLES TV | `#FFD000` | Episodes | 5 | rewatched (viewCount ≥ 3) |
-| 3 | `3` | NOSTALGEX LOL | `#F1C40F` | Movies | 3 | incl Comedy, no Animation/Animated, kw excl (3), 1980-1999 |
+| 3 | `3` | COUCHWAVE LOL | `#F1C40F` | Movies | 3 | incl Comedy, no Animation/Animated, kw excl (3), 1980-1999 |
 | 4 | `4` | SAT MORNING CARTOONS | `#00DD88` | Episodes | 15 | incl Animation/Kids/Children/Cartoon/Animated, 1960-1999, rated TV-Y/TV-Y7/TV-G/G/unrated |
 | 5 | `5` | 90S SITCOMS | `#9B59B6` | Episodes | 10 | incl Comedy, no Anime/Animation, 1990-1999 |
 | 6 | `6` | AFTER SCHOOL TV | `#F39C12` | Episodes | 5 | incl Comedy/Drama/Family, no Animation/Anime/Cartoon, 1980-1999, rated TV-G/TV-PG/TV-14/unrated |
@@ -281,7 +281,7 @@ _Christmas and holiday channels_
 | 130 | `130` | HOLIDAZE | `#C41E3A` | Movies | 3 | incl Holiday/Christmas, title allowlist (19), editorial always-in (96), Plex rating ≥ 5 |
 | 131 | **`409`** ⚠︎ | SANTA'S LIST | `#2ECC71` | Movies | 3 | incl Holiday/Christmas, title allowlist (114), title blocklist (6), rated G/PG/TV-Y/TV-Y7/TV-G/TV-PG/unrated |
 | 132 | **`410`** ⚠︎ | NAUGHTY LIST | `#C0392B` | Movies | 3 | incl Holiday/Christmas, title allowlist (114), title blocklist (6), rated PG-13/R/TV-14/TV-MA |
-| 133 | **`411`** ⚠︎ | NOSTALGEX CHRISTMAS | `#E74C3C` | Movies | 3 | incl Holiday/Christmas, title allowlist (114), title blocklist (6), …-1999 |
+| 133 | **`411`** ⚠︎ | COUCHWAVE CHRISTMAS | `#E74C3C` | Movies | 3 | incl Holiday/Christmas, title allowlist (114), title blocklist (6), …-1999 |
 | 134 | **`412`** ⚠︎ | HALLMARK | `#D98880` | Movies | 3 | no Animation/Animated/Horror, title allowlist (114), title blocklist (9), 2005-…, rated G/PG/TV-Y/TV-Y7/TV-G/TV-PG, 80-95 min |
 | 135 | **`413`** ⚠︎ | CHRISTMAS SPECIALS | `#27AE60` | Episodes | 3 | rated TV-PG/PG/TV-14/TV-MA/PG-13/R |
 | 136 | **`414`** ⚠︎ | KIDS CHRISTMAS TV | `#58D68D` | Episodes | 3 | rated TV-Y/TV-Y7/TV-G/G/unrated |
@@ -295,7 +295,7 @@ _Horror, all year's worth, front and centre every October_
 | 137 | **`131`** ⚠︎ | SCREAM KIDS | `#FF8C00` | Movies | 3 | no Horror, title allowlist (37), editorial always-in (43), rated G/PG/TV-Y/TV-Y7/TV-G/TV-PG |
 | 138 | **`141`** ⚠︎ | FRIGHT NIGHT | `#8B0000` | Any | 5 | incl Horror |
 | 139 | **`132`** ⚠︎ | SCREAM ADULTS | `#8B0000` | Movies | 3 | incl Horror/Thriller, no Family/Children/Kids/Animation/Animated, title allowlist (53), title blocklist (13), rated R/NC-17/PG-13/TV-MA |
-| 140 | **`408`** ⚠︎ | NOSTALGEX HORROR | `#8E44AD` | Movies | 3 | incl Horror, no Family/Children/Kids/Animation/Animated, 1975-1999 |
+| 140 | **`408`** ⚠︎ | COUCHWAVE HORROR | `#8E44AD` | Movies | 3 | incl Horror, no Family/Children/Kids/Animation/Animated, 1975-1999 |
 
 ### HIGH ROTATION · CH 200–213
 
@@ -385,14 +385,14 @@ _Music videos by genre_
 | `401` | CH129 | MIRAMAX |
 | `409` | CH131 | SANTA'S LIST |
 | `410` | CH132 | NAUGHTY LIST |
-| `411` | CH133 | NOSTALGEX CHRISTMAS |
+| `411` | CH133 | COUCHWAVE CHRISTMAS |
 | `412` | CH134 | HALLMARK |
 | `413` | CH135 | CHRISTMAS SPECIALS |
 | `414` | CH136 | KIDS CHRISTMAS TV |
 | `131` | CH137 | SCREAM KIDS |
 | `141` | CH138 | FRIGHT NIGHT |
 | `132` | CH139 | SCREAM ADULTS |
-| `408` | CH140 | NOSTALGEX HORROR |
+| `408` | CH140 | COUCHWAVE HORROR |
 | `150` | CH200 | HIGH ROTATION |
 | `151` | CH201 | POP |
 | `152` | CH202 | ROCK'N |

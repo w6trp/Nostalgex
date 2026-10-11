@@ -24,7 +24,7 @@ struct EmbyAPIService: MediaBackend, WatchActivityReporting {
     /// `MediaBrowser` authorization scheme shared with Jellyfin. `Token` is omitted on initial auth.
     static func authorizationHeader(deviceID: String, token: String) -> String {
         var fields = [
-            "Client=\"Nostalgex\"",
+            "Client=\"CouchWave\"",
             "Device=\"Apple TV\"",
             "DeviceId=\"\(deviceID)\"",
             "Version=\"1.0\"",

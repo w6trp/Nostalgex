@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Nostalgex</title>
-<link rel="icon" type="image/png" href="./logo/favicon.png">
+<title>CouchWave</title>
+<link rel="icon" type="image/png" href="./logo/couchwave-symbol.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=VT323&family=Press+Start+2P&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js" integrity="sha384-9v3HcdYrO3D+OPDTjZ40RXocgE4GtXVCd3/mCS62JsM93JXgI1afJVuwjFvsu6ni" crossorigin="anonymous"></script>
@@ -1976,7 +1976,7 @@
 
   <!-- CORNER LOGO -->
   <div class="player-logo">
-    <img src="./logo/nostalgex-white.svg" alt="Nostalgex">
+    <img src="./logo/couchwave-wordmark.png" alt="CouchWave">
   </div>
 
   <!-- VIDEO AREA (flexible, fills remaining space) -->
@@ -2016,18 +2016,9 @@
         <span class="v-btn-label">SETTINGS</span>
         <span class="v-btn-value">[H]</span>
       </button>
-      <a class="v-btn" href="https://apps.apple.com/app/nostalgex/id6762563534" target="_blank" rel="noopener noreferrer" aria-label="Download Nostalgex on Apple TV">
-        <span class="v-btn-label">APPLE TV</span>
+      <a class="v-btn" href="https://github.com/w6trp/Nostalgex" target="_blank" rel="noopener noreferrer" aria-label="CouchWave source and Apple TV build instructions">
+        <span class="v-btn-label">SOURCE</span>
         <span class="v-btn-value">[↓]</span>
-      </a>
-      <a class="v-coffee" href="https://buymeacoffee.com/chadmueller" target="_blank" rel="noopener noreferrer" aria-label="Buy me a coffee to support Nostalgex">
-        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-          <path class="steam" d="M9 2.5c-.6.8-.6 1.5 0 2.3M12 2c-.6.9-.6 1.7 0 2.6M15 2.5c-.6.8-.6 1.5 0 2.3" stroke="#000" stroke-width="1.3" stroke-linecap="round"/>
-          <path d="M4 8.5h12v5a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4v-5z" stroke="#000" stroke-width="1.7" stroke-linejoin="round"/>
-          <path d="M16 9.5h2.2a2.3 2.3 0 0 1 0 4.6H16" stroke="#000" stroke-width="1.7" stroke-linejoin="round"/>
-          <path d="M3 20.5h14" stroke="#000" stroke-width="1.7" stroke-linecap="round"/>
-        </svg>
-        <span class="v-coffee-label">BUY ME<br>A COFFEE</span>
       </a>
     </div>
 
@@ -2041,7 +2032,7 @@
 
       <!-- Loading library indicator -->
       <div class="loading-library" id="loading-library" style="display: none;">
-        <img class="loading-library-logo" src="./logo/nostalgex-white.svg" alt="Nostalgex">
+        <img class="loading-library-logo" src="./logo/couchwave-wordmark.png" alt="CouchWave">
         <div class="loading-library-first-hint" id="loading-library-first-hint" style="display: none;">
           First setup can take a few minutes to scan and build channels.
         </div>
@@ -2056,10 +2047,7 @@
         </div>
         <div class="loading-library-coffee">
           <div class="loading-library-coffee-lead">Channels are building. Grab a coffee while you wait.</div>
-          <a class="loading-library-coffee-btn" href="https://buymeacoffee.com/chadmueller" target="_blank" rel="noopener noreferrer" aria-label="Buy me a coffee to support Nostalgex">
-            <span class="cup" aria-hidden="true">☕</span>
-            <span>BUY ME A COFFEE</span>
-          </a>
+          <span>CouchWave is based on Nostalgex by Chad Mueller. MIT licensed.</span>
         </div>
       </div>
 
@@ -2112,7 +2100,7 @@
   <div class="plex-connect" id="plex-connect">
     <div class="connect-crt-overlay"></div>
     <div class="plex-logo">
-      <img src="./logo/nostalgex-white.svg" alt="NOSTALGEX">
+      <img src="./logo/couchwave-wordmark.png" alt="CouchWave">
     </div>
 
     <!-- Default: sign in button -->
@@ -2158,7 +2146,7 @@
 <div class="config-overlay" id="config-overlay">
   <div class="config-panel">
     <div class="config-header">
-      <img src="./logo/nostalgex-white.svg" alt="Nostalgex">
+      <img src="./logo/couchwave-wordmark.png" alt="CouchWave">
     </div>
     <div class="config-sub">Settings</div>
 
@@ -2732,7 +2720,7 @@
     return covered;
   }
 
-  // Mirrors Channel.filteredPool() in Nostalgex/Nostalgex/Models/Channel.swift.
+  // Mirrors Channel.filteredPool() in CouchWave/CouchWave/Models/Channel.swift.
   // The web only ever implemented blockRatings, so tvOnlyBefore and onlyAfterHour
   // were silently ignored here and the two surfaces built their schedules from
   // different pools. Keep the three branches, their order, and the "keep at least
@@ -3566,7 +3554,7 @@
       }
       return fallback;
     } catch (e) {
-      console.warn('[Nostalgex] PlaybackInfo failed, using fallback transcode URL:', e);
+      console.warn('[CouchWave] PlaybackInfo failed, using fallback transcode URL:', e);
       return fallback;
     }
   }
@@ -3612,7 +3600,7 @@
           const q = new URLSearchParams({ ratingKey: item.ratingKey,
             key: '/library/metadata/' + item.ratingKey, state, time, duration,
             'X-Plex-Session-Identifier': sessionID, 'X-Plex-Token': serverToken,
-            'X-Plex-Client-Identifier': clientID, 'X-Plex-Product': 'Nostalgex', 'X-Plex-Platform': 'Web' });
+            'X-Plex-Client-Identifier': clientID, 'X-Plex-Product': 'CouchWave', 'X-Plex-Platform': 'Web' });
           return dispatch(`${serverUrl}/:/timeline?${q}`, { method: 'POST', keepalive, headers: { Accept: 'application/json', 'X-Plex-Session-Identifier': sessionID } });
         }
       },
@@ -3697,9 +3685,9 @@
           + `&session=${transcodeSessionId}`
           + `&X-Plex-Session-Identifier=${transcodeSessionId}`
           + `&X-Plex-Client-Identifier=${getClientId()}`
-          + `&X-Plex-Product=Nostalgex`
+          + `&X-Plex-Product=CouchWave`
           + `&X-Plex-Platform=Web&X-Plex-Platform-Version=1.0`
-          + `&X-Plex-Device=Browser&X-Plex-Device-Name=Nostalgex`;
+          + `&X-Plex-Device=Browser&X-Plex-Device-Name=CouchWave`;
 
       }
     }
@@ -4773,7 +4761,7 @@
       track.addEventListener('load', () => { if (track.track) track.track.mode = 'showing'; });
       setTimeout(() => { if (track.track) track.track.mode = 'showing'; }, 300);
     } catch (e) {
-      console.warn('[Nostalgex] Subtitle load failed:', e);
+      console.warn('[CouchWave] Subtitle load failed:', e);
     }
   }
 
@@ -5196,7 +5184,7 @@
   // ══════════════════════════════════════
   const PLEX_HEADERS = {
     'Accept': 'application/json',
-    'X-Plex-Product': 'Nostalgex',
+    'X-Plex-Product': 'CouchWave',
     'X-Plex-Version': '1.0.0',
     'X-Plex-Platform': 'Web',
   };
@@ -5233,7 +5221,7 @@
 
   // Jellyfin MediaBrowser auth header (mirrors the tvOS JellyfinAPIService).
   function jellyfinAuthHeader() {
-    const fields = ['Client="Nostalgex"', 'Device="Browser"', `DeviceId="${getClientId()}"`, 'Version="1.0"'];
+    const fields = ['Client="CouchWave"', 'Device="Browser"', `DeviceId="${getClientId()}"`, 'Version="1.0"'];
     if (plexToken) fields.push(`Token="${plexToken}"`);
     return 'MediaBrowser ' + fields.join(', ');
   }
@@ -5455,7 +5443,7 @@
       if (workingConn) {
         resolved.push({ name: server.name, url: workingConn.uri, token, connections: server.connections || [], machineIdentifier: server.machineIdentifier || '' });
       } else {
-        console.warn(`[Nostalgex] No reachable connection for server: ${server.name}`);
+        console.warn(`[CouchWave] No reachable connection for server: ${server.name}`);
       }
     }
 
@@ -5648,7 +5636,7 @@
       // If neither valid nor tokenRevoked, leave credentials in place and show connect screen.
       // The user can retry without re-entering credentials.
     } catch (err) {
-      console.error('[Nostalgex] Stored auth check failed:', err);
+      console.error('[CouchWave] Stored auth check failed:', err);
       // Unexpected error — credentials preserved, connect screen shows
     }
   }
@@ -5786,7 +5774,7 @@
       const token = server.accessToken || plexToken;
       const conn = await findWorkingConnection(server, token);
       if (!conn) {
-        console.warn(`[Nostalgex] Cannot reach ${server.name}`);
+        console.warn(`[CouchWave] Cannot reach ${server.name}`);
         return;
       }
       selectedServers.push({
@@ -5805,7 +5793,7 @@
     try {
       await fetchLibraryFromServer();
     } catch (err) {
-      console.warn('[Nostalgex] Library rescan after server toggle failed:', err);
+      console.warn('[CouchWave] Library rescan after server toggle failed:', err);
     }
   }
 
@@ -5942,7 +5930,7 @@
     const mvCount = allItems.filter(MB.isMusicVideoItem).length;
     if (mvCount === 0) return;
 
-    console.log(`[Nostalgex] Deferring MusicBrainz for ${mvCount} music videos until after tune-in`);
+    console.log(`[CouchWave] Deferring MusicBrainz for ${mvCount} music videos until after tune-in`);
     MB.loadDiskCache();
     MB.enrichMusicVideos([...allItems], () => {}).then(() => {
       allItemsCache = MB.itemsWithDisplayMetadata(allItemsCache);
@@ -5959,7 +5947,7 @@
         const ch = CHANNELS.find(c => c.id === currentChannel);
         if (ch) switchChannel(ch.id);
       }
-    }).catch(err => console.warn('[Nostalgex] Background music enrichment failed:', err));
+    }).catch(err => console.warn('[CouchWave] Background music enrichment failed:', err));
   }
 
   async function finalizeLibraryWithMusicBrainz(allItems, options = {}) {
@@ -6287,7 +6275,7 @@
         if (!data || !data.MediaContainer) { lastError = new Error(`Malformed response from ${uri}`); continue; }
 
         if (uri !== plexServerUrl) {
-          console.log(`[Nostalgex] Library fetch fell back to ${uri}`);
+          console.log(`[CouchWave] Library fetch fell back to ${uri}`);
           plexServerUrl = uri;
           sessionStorage.setItem('plex90_server_url', uri);
         }
@@ -6329,7 +6317,7 @@
         if (!data || !data.MediaContainer) { lastError = new Error(`Malformed response from ${uri}`); continue; }
 
         if (uri !== server.url) {
-          console.log(`[Nostalgex] ${server.name}: fell back to ${uri}`);
+          console.log(`[CouchWave] ${server.name}: fell back to ${uri}`);
           server.url = uri;
         }
         return data;
@@ -6605,9 +6593,9 @@
         const items = await scanOnePlexServer(server, LL, merged.length, multiServer);
         merged = merged.concat(items);
         successCount++;
-        console.log(`[Nostalgex] ${server.name}: ${items.length} items`);
+        console.log(`[CouchWave] ${server.name}: ${items.length} items`);
       } catch (err) {
-        console.warn(`[Nostalgex] Scan failed for ${server.name}:`, err);
+        console.warn(`[CouchWave] Scan failed for ${server.name}:`, err);
         if (err.plexStatus) throw err;
       }
     }
@@ -6622,11 +6610,11 @@
     });
     if (options.generation !== libraryGeneration) return;
 
-    console.log('[Nostalgex] Channel population results:');
+    console.log('[CouchWave] Channel population results:');
     CHANNELS.forEach(ch => {
       console.log(`  CH ${ch.id} ${ch.name}: ${ch.itemPool.length} items, enabled=${ch.enabled}, minItems=${ch.minItems}`);
     });
-    console.log(`[Nostalgex] Total channels: ${CHANNELS.length}, enabled: ${CHANNELS.filter(c => c.enabled).length}`);
+    console.log(`[CouchWave] Total channels: ${CHANNELS.length}, enabled: ${CHANNELS.filter(c => c.enabled).length}`);
 
     if (!background) {
       LL.hide();
@@ -6636,11 +6624,11 @@
   }
   async function fetchPlexLibraryFresh() {
     if (!plexServerUrl || !plexToken) return;
-    console.log('[Nostalgex] Background library refresh…');
+    console.log('[CouchWave] Background library refresh…');
     try {
       await fetchLibraryFromServer({ background: true, buildAllChannels: false });
     } catch (err) {
-      console.warn('[Nostalgex] Background refresh failed:', err);
+      console.warn('[CouchWave] Background refresh failed:', err);
     }
   }
 
@@ -6674,7 +6662,7 @@
       const errorEl = document.getElementById('plex-error-label');
       if (mediaBackend === 'jellyfin') {
         errorEl.textContent = err && err.plexStatus
-          ? 'JELLYFIN SESSION ENDED. RECONNECT AT NOSTALGEX.APP/WEB-TUNER'
+          ? 'JELLYFIN SESSION ENDED. RECONNECT AT THE COUCHWAVE WEB TUNER'
           : mixedContentBlocked
           ? 'YOUR SERVER USES HTTP. BROWSERS BLOCK THAT ON A SECURE PAGE. USE AN HTTPS URL, OR THE APPLE TV APP FOR A LOCAL SERVER'
           : 'COULD NOT REACH JELLYFIN SERVER. IT HAS TO ANSWER OVER HTTPS — A PLAIN LAN SERVER NEEDS THE APPLE TV APP';

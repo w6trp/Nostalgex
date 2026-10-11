@@ -3,6 +3,18 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-10-11 (CouchWave artwork and device installation)
+
+**Shipped.** CouchWave 1.0.25 (46) was signed, installed and launched on a paired physical Apple TV 4K (2nd generation) running tvOS 27.0. Both app and Top Shelf provision with the same App Group using development signing. No App Store, TestFlight or website deployment occurred.
+
+**Changed.** Original couch-surfing artwork replaces the provisional beta graphics in the icon, Top Shelf, native headers and browser tuner. Browser sign-in and server-client names use CouchWave. Displayed channel names use CouchWave while their stable IDs remain unchanged. Browser links no longer imply that upstream's App Store app or donation accounts belong to this fork. Asset originals, generation prompts and the size-export script are checked in. Upstream MIT credit remains visible.
+
+**Validation.** Xcode 27 signed build succeeded, strict recursive codesign verification passed, device installation and process launch succeeded. JavaScript checks and the production web build passed. Earlier native simulator validation passed 464 tests with 2 opt-in live-server tests skipped. No live media-server state was tested or changed.
+
+**Half-done.** Changes remain on `codex/reliability-and-plex-privacy`. Remote navigation, actual playback and live Top Shelf behavior require owner hardware acceptance. Personal development profiles expire after seven days and require a fresh signed install. Local owner-specific Xcode signing selections are intentionally not committed. Historical upstream marketing pages are not a CouchWave release site.
+
+**Next.** Test sign-in, channel surfing and remote focus on the device with history/resume reporting off. No verified Plex activity-only reporting path is enabled. Keep upstream history and legal credit when extending the branding to a future public website.
+
 ## 2026-10-11 (CouchWave beta identity)
 
 **Shipped.** No signed build, TestFlight upload or website deployment. Changes remain on `codex/reliability-and-plex-privacy` for the personal fork.

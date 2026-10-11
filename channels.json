@@ -117,7 +117,7 @@
   "bundles": [
     {
       "id": "nostalgex",
-      "name": "NOSTALGEX",
+      "name": "COUCHWAVE",
       "description": "The 80s and 90s. All retro, all the time",
       "channelIDs": [
         1,
@@ -378,7 +378,7 @@
     },
     {
       "id": 3,
-      "name": "NOSTALGEX LOL",
+      "name": "COUCHWAVE LOL",
       "colorHex": "#F1C40F",
       "category": "nostalgex",
       "minItems": 3,
@@ -943,7 +943,7 @@
     {
       "id": 408,
       "number": 140,
-      "name": "NOSTALGEX HORROR",
+      "name": "COUCHWAVE HORROR",
       "colorHex": "#8E44AD",
       "category": "seasonal",
       "minItems": 3,
@@ -4001,7 +4001,7 @@
     {
       "id": 411,
       "number": 133,
-      "name": "NOSTALGEX CHRISTMAS",
+      "name": "COUCHWAVE CHRISTMAS",
       "colorHex": "#E74C3C",
       "category": "seasonal",
       "minItems": 3,

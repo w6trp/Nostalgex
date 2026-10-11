@@ -21,7 +21,7 @@ const CHECK_ONLY = process.argv.includes("--check");
 
 // ── Hand-written guidance, preserved across regenerations ──────────────────
 
-const PREAMBLE = `# Nostalgex Channel Guide
+const PREAMBLE = `# CouchWave Channel Guide
 
 <!-- GENERATED FILE — do not edit by hand. Run \`npm run channels:doc\` after any
      channels.json change. Source: scripts/render-channels-doc.mjs -->

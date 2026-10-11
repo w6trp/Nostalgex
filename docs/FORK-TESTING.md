@@ -137,3 +137,7 @@ telemetry and optional metadata-cache isolation.
 ## CouchWave beta identity
 
 The internal project/scheme/module and app executable still use the upstream Nostalgex name. The installed display name is CouchWave, and its bundle ID, keychain service, App Group, links and media-server client names are independent. A code-rendered beta wordmark and icon replace upstream branding in the Apple TV UI. These identifiers are source configuration, not proof of Apple registration or successful signing. No domain has been registered.
+
+## Physical device checkpoint
+
+CouchWave 1.0.25 (46), with original couch-and-wave artwork, was signed, installed and launched on tvOS 27.0 using local development signing. Both app and Top Shelf have matching App Group provisioning. Personal development profiles last seven days; rebuild and reinstall locally to renew. The local signing team selection is not committed. Installation and launch do not establish playback, remote focus or live Top Shelf correctness; those remain hardware acceptance checks. Server history/resume reporting remains off by default.
