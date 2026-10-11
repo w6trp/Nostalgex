@@ -3,6 +3,18 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-10-11 (Plex activity verification preparation)
+
+**Shipped.** No replacement app installed and no reporting preference changed. The physical device remains on CouchWave 1.0.25 (46), source `f508c21` with local signing configuration.
+
+**Changed.** Confirmed upstream main still points to `c2f32e6`. The installed source adds four commits over that base. Documented the current history-writing flag semantics and reviewed the official Plex timeline/status API. Prepared a scoped read-only observer and isolated test protocol, including before/during/after metadata, session and history comparisons. Corrected older documentation that still described device signing as unverified.
+
+**Validation.** Seven synthetic observer tests pass. Installed source CI also passed channel engine, web and native tests. No server credentials were accessed, no test account was created, and no live timeline/scrobble or history experiment ran.
+
+**Half-done.** Plex documentation provides no verified history-suppression parameter. Bunny Ears TV's developer-published settings screenshot confirms a position-free Heartbeat Only mode, providing a concrete test lead. Its private implementation and persisted-state effects remain unknown. A disposable test profile, sample items and authorized observation access have not been established. The prepared tool cannot prove behavior without that isolated experiment.
+
+**Next.** Obtain exact authorization for existing disposable profile/sample data, or separately for creation of a named limited-access test profile. Run the reporting-off control first. Keep the real-account history switch off.
+
 ## 2026-10-11 (CouchWave artwork and device installation)
 
 **Shipped.** CouchWave 1.0.25 (46) was signed, installed and launched on a paired physical Apple TV 4K (2nd generation) running tvOS 27.0. Both app and Top Shelf provision with the same App Group using development signing. No App Store, TestFlight or website deployment occurred.
