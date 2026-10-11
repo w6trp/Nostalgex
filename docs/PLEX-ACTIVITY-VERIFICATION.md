@@ -1,5 +1,15 @@
 # Plex live activity without watch-history changes
 
+## Current build: unlimited heartbeat integration
+
+Build 52 incorporates the exact ordered `PlexHeartbeatReporter` and narrow HTTP request implementation from upstream draft PR [#18](https://github.com/chadMueller/Nostalgex/pull/18), while preserving CouchWave's playback fixes. It removes both the ten-minute cutoff and twelve-title ceiling. The fork retains a verification transport around those requests: stored fields and history are checked before/after writes, with reporting stopped if verification fails or changes appear. It never resets history. The queue and HTTP builder match the upstream feature; the fork's observer and playback integration differ, so fork hardware results do not establish validation of the exact upstream branch.
+
+Full native suite: 495 passed, 2 optional live harnesses skipped. Tests cover more than eleven simulated minutes, fifteen titles, ordered channel stops, disable during an in-flight request, fresh identities on reactivation, background/foreground, and unchanged privacy payloads. These deterministic tests are not elapsed-time hardware evidence.
+
+Hardware acceptance pending: leave a channel playing for more than eleven minutes; confirm current live visibility and unchanged stored state. Then change channels, disable Heartbeat Only while playback continues, re-enable it, and exit to Home. Verify exact stopped acknowledgements and no sampled-client sessions after cleanup. Check delayed history again without modifying it. Keep History & Resume off. The upstream PR remains draft.
+
+The earlier entries below describe prior builds and their then-current limits.
+
 ## Build 47 experiment authorization
 
 The owner explicitly authorized using the existing signed-in profile after being told persistence effects were unverified. The earlier disposable-profile proposal below is retained as the original protocol, not a current blocker. No new Plex account/token or permissions are authorized or needed.

@@ -3,6 +3,18 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-10-11 (unlimited heartbeat integration)
+
+**Shipped.** CouchWave 1.0.25 (52) is signed, installed and running on the paired tvOS device after the owner confirmed it was idle. The owner has started the sustained playback test.
+
+**Changed.** Reused the upstream draft PR's ordered server queue and narrow position-free request implementation. Removed the ten-minute cutoff and twelve-title ceiling. Channel changes enqueue the outgoing stop before the incoming heartbeat. Disable waits for the in-flight request and closes its exact session; reactivation uses a fresh identity. Background time also covers disable cleanup. Existing CouchWave playback fixes, branding, history defaults and guarded read-only comparisons remain in place. No history is reset.
+
+**Validation.** 495 native tests passed, 2 optional live harnesses skipped. New coverage exercises the upstream queue, request-field omission, reactivation, released-owner cleanup and continued reporting beyond the former time/title limits. Signed device compilation and strict codesign verification succeeded. Installed version was read back as build 52.
+
+**Half-done.** Sustained hardware playback beyond eleven minutes, manual disable/re-enable and delayed stored-state checks remain pending. The upstream PR stays draft; this fork adds verification around the shared implementation and is not the exact upstream branch.
+
+**Next.** Collect the longer live audit, including disable and Home-screen cleanup. Keep personal signing configuration and audit data out of Git.
+
 ## 2026-10-11 (experimental cutoff and disable cleanup)
 
 **Shipped.** CouchWave 1.0.25 (51) is signed and installed after the owner confirmed the TV was idle. It was not launched over an active viewing test.

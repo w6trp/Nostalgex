@@ -1,9 +1,9 @@
 import Foundation
 import CryptoKit
 
-/// Explicitly enabled, bounded research mode. State is inspected with the app's
+/// Read-only history verification around the unlimited heartbeat transport. State is inspected with the app's
 /// existing profile token. No new credential or server setting is created.
-actor PlexHeartbeatExperiment: PlexPlaybackReporting {
+actor PlexHeartbeatExperiment: PlexPlaybackReporting, PlexHeartbeatTransport {
     struct StoredState: Codable, Equatable {
         var viewCount: Int?
         var viewOffset: Int?
@@ -19,7 +19,7 @@ actor PlexHeartbeatExperiment: PlexPlaybackReporting {
         var sessionStates: [String]?
         var detail: String?
     }
-    enum Failure: Error { case unavailable, incomplete, changed, expired, auditUnavailable }
+    enum Failure: Error { case unavailable, incomplete, changed, auditUnavailable }
     private struct ActiveSession {
         let ratingKey: String
         let key: String
@@ -28,7 +28,7 @@ actor PlexHeartbeatExperiment: PlexPlaybackReporting {
     let api: PlexAPIService
     let onStop: @MainActor @Sendable (String) -> Void
     private let read: @Sendable (String, [URLQueryItem]) async throws -> [String: Any]
-    private let sender: any PlexPlaybackReporting
+    private let sender: (any PlexPlaybackReporting)?
     private let clock: @Sendable () -> Date
     private let automaticallyObserves: Bool
     private let predecessor: Task<Void, Never>?
@@ -52,7 +52,7 @@ actor PlexHeartbeatExperiment: PlexPlaybackReporting {
          onStop: @escaping @MainActor @Sendable (String) -> Void) {
         self.api = api; self.onStop = onStop
         self.auditWriter = auditWriter ?? Self.writeAudit
-        self.sender = sender ?? api
+        self.sender = sender
         self.clock = clock; self.automaticallyObserves = automaticallyObserves
         self.predecessor = predecessor
         self.read = read ?? { path, query in try await api.heartbeatRead(path: path, query: query) }
@@ -73,19 +73,28 @@ actor PlexHeartbeatExperiment: PlexPlaybackReporting {
         return await task.value
     }
 
-    private var expired: Bool { startedAt.map { clock().timeIntervalSince($0) >= 600 } ?? false }
+    func reportHeartbeat(ratingKey: String, state: String, sessionID: String) async -> Bool {
+        await reportTimeline(ratingKey: ratingKey, key: "/library/metadata/\(ratingKey)",
+                             state: state, timeMs: nil, durationMs: nil, sessionID: sessionID)
+    }
+
+    private func send(ratingKey: String, key: String, state: String, sessionID: String) async -> Bool {
+        if let sender {
+            return await sender.reportTimeline(ratingKey: ratingKey, key: key, state: state,
+                                               timeMs: nil, durationMs: nil, sessionID: sessionID)
+        }
+        return await api.reportHeartbeat(ratingKey: ratingKey, state: state, sessionID: sessionID)
+    }
 
     private func perform(ratingKey: String, key: String, state: String, sessionID: String) async -> Bool {
         guard acceptingReports, !stopped else { return false }
         do {
             if startedAt == nil {
                 startedAt = clock()
-                append(Audit(event: "started", detail: "Position-free heartbeat; 10-minute maximum; no watched calls"))
+                append(Audit(event: "started", detail: "Position-free heartbeat; no time or title limit; no watched calls"))
             }
             guard auditAvailable else { throw Failure.auditUnavailable }
-            guard !expired else { throw Failure.expired }
             if baseline[ratingKey] == nil {
-                guard baseline.count < 12 else { throw Failure.incomplete }
                 let stored = try await readState(ratingKey)
                 guard acceptingReports, !stopped else { return false }
                 aliases[ratingKey] = "item-\(aliases.count + 1)"
@@ -96,10 +105,7 @@ actor PlexHeartbeatExperiment: PlexPlaybackReporting {
             try await checkAll()
             guard acceptingReports, !stopped else { return false }
             guard auditAvailable else { throw Failure.auditUnavailable }
-            // Slow baseline reads must not start a new heartbeat past the deadline.
-            guard !expired else { throw Failure.expired }
-            let acknowledged = await sender.reportTimeline(ratingKey: ratingKey, key: key, state: state,
-                                                         timeMs: nil, durationMs: nil, sessionID: sessionID)
+            let acknowledged = await send(ratingKey: ratingKey, key: key, state: state, sessionID: sessionID)
             append(Audit(event: "heartbeat", item: aliases[ratingKey], detail: acknowledged ? state : "request failed"))
             guard acknowledged else { throw Failure.unavailable }
             if state == "stopped" {
@@ -121,12 +127,12 @@ actor PlexHeartbeatExperiment: PlexPlaybackReporting {
             }
             return true
         } catch {
-            await finish(error, cleanup: error as? Failure == .expired, notify: true)
+            await finish(error, cleanup: false, notify: true)
             return false
         }
     }
 
-    /// Timer observations share the write queue so expiry cannot race an in-flight report.
+    /// Timer observations share the write queue so verification cannot race an in-flight report.
     func observeNow() async {
         guard acceptingReports, !stopped else { return }
         let previous = pending
@@ -142,14 +148,12 @@ actor PlexHeartbeatExperiment: PlexPlaybackReporting {
     private func performObservation() async -> Bool {
         guard acceptingReports, !stopped else { return false }
         do {
-            if expired { throw Failure.expired }
             try await checkAll()
             append(Audit(event: "sessions", sessionStates: try await readSessionStates()))
             guard auditAvailable else { throw Failure.auditUnavailable }
-            if expired { throw Failure.expired }
             return true
         } catch {
-            await finish(error, cleanup: error as? Failure == .expired, notify: true)
+            await finish(error, cleanup: false, notify: true)
             return false
         }
     }
@@ -172,8 +176,7 @@ actor PlexHeartbeatExperiment: PlexPlaybackReporting {
             guard auditAvailable else { throw Failure.auditUnavailable }
             _ = try await readSessionStates()
             try await checkAll()
-            let acknowledged = await sender.reportTimeline(ratingKey: session.ratingKey, key: session.key,
-                state: "stopped", timeMs: nil, durationMs: nil, sessionID: session.sessionID)
+            let acknowledged = await send(ratingKey: session.ratingKey, key: session.key, state: "stopped", sessionID: session.sessionID)
             append(Audit(event: "cleanup_stop", item: aliases[session.ratingKey],
                          detail: acknowledged ? "stopped" : "request failed"))
             guard acknowledged else { throw Failure.unavailable }
@@ -199,7 +202,6 @@ actor PlexHeartbeatExperiment: PlexPlaybackReporting {
         case nil where outcome == nil: message = "Heartbeat disabled; active session cleanup finished. Playback continues."
         case .changed?: message = "Heartbeat stopped: Plex watch state or history changed. No history was reset."
         case .auditUnavailable?: message = "Heartbeat stopped: the verification audit could not be saved."
-        case .expired?: message = "Heartbeat test finished after 10 minutes; active session cleanup finished. Playback continues."
         default: message = "Heartbeat stopped: Plex verification was unavailable or incomplete. Session cleanup is unconfirmed."
         }
         append(Audit(event: reason == nil ? "disabled" : "stopped", detail: message))

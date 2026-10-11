@@ -672,6 +672,7 @@ extension AppState {
     }
 
     func disconnect() {
+        closeHeartbeatReporters()
         invalidatePlaybackWork()
         musicEnrichmentTask?.cancel()
         musicEnrichmentTask = nil

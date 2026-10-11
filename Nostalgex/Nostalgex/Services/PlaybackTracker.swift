@@ -16,6 +16,8 @@ extension PlexAPIService: PlexPlaybackReporting {}
 final class PlaybackTracker {
     enum State: String { case playing, buffering, paused, stopped }
     enum ReportingMode { case history, heartbeatOnly }
+    private var heartbeatReporter: PlexHeartbeatReporter?
+    private var heartbeatSessionID = UUID().uuidString
     private var reportingMode: ReportingMode
 
     let sessionID = UUID().uuidString
@@ -52,13 +54,15 @@ final class PlaybackTracker {
     init(item: PlexMediaItem, seekOffset: Int, plexAPI: (any PlexPlaybackReporting)?,
          watchReporter: (any WatchActivityReporting)? = nil,
          reportingMode: ReportingMode = .history,
+         heartbeatReporter: PlexHeartbeatReporter? = nil,
          clock: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
          automaticallySchedulesTimer: Bool = true) {
         self.item = item
         self.seekOffset = seekOffset
-        self.plexAPI = plexAPI
-        self.reportingMode = reportingMode
-        self.watchReporter = reportingMode == .heartbeatOnly ? nil : watchReporter
+        self.heartbeatReporter = heartbeatReporter
+        self.plexAPI = heartbeatReporter == nil ? plexAPI : nil
+        self.reportingMode = heartbeatReporter == nil ? reportingMode : .heartbeatOnly
+        self.watchReporter = self.reportingMode == .heartbeatOnly ? nil : watchReporter
         self.clock = clock
         self.automaticallySchedulesTimer = automaticallySchedulesTimer
         positionSeconds = Double(max(0, seekOffset))
@@ -158,16 +162,19 @@ final class PlaybackTracker {
     /// Playback accounting continues independently of the reporting preference.
     func setReporters(plexAPI: (any PlexPlaybackReporting)?,
                       watchReporter: (any WatchActivityReporting)? = nil,
-                      reportingMode: ReportingMode = .history) {
+                      reportingMode: ReportingMode = .history,
+                      heartbeatReporter: PlexHeartbeatReporter? = nil) {
         reportGeneration += 1
         reportTask?.cancel()
         reportTask = nil
         reportQueue.removeAll()
         scrobblePending = false
         didStartSession = false
-        self.plexAPI = plexAPI
-        self.reportingMode = reportingMode
-        self.watchReporter = reportingMode == .heartbeatOnly ? nil : watchReporter
+        if self.heartbeatReporter !== heartbeatReporter { heartbeatSessionID = UUID().uuidString }
+        self.heartbeatReporter = heartbeatReporter
+        self.plexAPI = heartbeatReporter == nil ? plexAPI : nil
+        self.reportingMode = heartbeatReporter == nil ? reportingMode : .heartbeatOnly
+        self.watchReporter = self.reportingMode == .heartbeatOnly ? nil : watchReporter
         if !stopped, !backgrounded, hasPlaybackSample { sendTimeline(state: state) }
     }
 
@@ -202,7 +209,10 @@ final class PlaybackTracker {
         evaluateAndScrobble()
     }
 
-    func waitForPendingReports() async { await reportTask?.value }
+    func waitForPendingReports() async {
+        await reportTask?.value
+        await heartbeatReporter?.waitForPendingReports()
+    }
 
     private func enqueue(_ operation: @escaping () async -> Void) {
         reportQueue.append(operation)
@@ -224,6 +234,12 @@ final class PlaybackTracker {
     private var durationMs: Int { Int(min(durationSeconds, Double(Int.max / 1000)) * 1000) }
 
     private func sendTimeline(state: State) {
+        if let heartbeatReporter {
+            // Enqueue synchronously on the shared server queue before a new channel
+            // can enqueue its first heartbeat. No tracker task can overtake this stop.
+            heartbeatReporter.report(ratingKey: item.ratingKey, state: state.rawValue, sessionID: heartbeatSessionID)
+            return
+        }
         // A part's duration is not the movie's duration. With neither exact metadata
         // nor a measured full stack, avoid misleading resume/completion writes.
         guard reportingMode == .heartbeatOnly || !isMultipart || hasReliableWholeItemDuration else { return }

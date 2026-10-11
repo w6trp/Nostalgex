@@ -63,15 +63,20 @@ class AppState {
     /// Keep normal app-exit reporting alive long enough to finish the final stop
     /// and guarded post-write observations. The OS can still expire this budget.
     private func reportPlaybackBackgrounded() {
-        guard let tracker = playbackTracker else { return }
+        let tracker = playbackTracker
+        let reporter = heartbeatQueue
+        let cleanup = heartbeatCleanupTask
+        guard tracker != nil || reporter != nil || cleanup != nil else { return }
         endBackgroundReporting()
         let identifier = UIApplication.shared.beginBackgroundTask(withName: "Finish playback reporting") { [weak self] in
             self?.endBackgroundReporting()
         }
         backgroundReportingTask = identifier
-        tracker.onBackground()
+        tracker?.onBackground()
         Task { @MainActor [weak self, tracker] in
-            await tracker.waitForPendingReports()
+            await tracker?.waitForPendingReports()
+            await reporter?.waitForPendingReports()
+            await cleanup?.value
             guard let self, self.backgroundReportingTask == identifier else { return }
             self.endBackgroundReporting()
         }
@@ -432,20 +437,21 @@ class AppState {
 
     var heartbeatTestNotice: String?
     private var heartbeatExperiment: PlexHeartbeatExperiment?
+    private var heartbeatQueue: PlexHeartbeatReporter?
     private var heartbeatExperimentID: UUID?
     private var heartbeatCleanupTask: Task<Void, Never>?
     private var heartbeatExperimentServerURL: String?
     private var heartbeatExperimentToken: String?
 
-    func heartbeatReporter(for api: PlexAPIService?) -> (any PlexPlaybackReporting)? {
-        guard let api else { return nil }
-        if let heartbeatExperiment {
+    func heartbeatReporter(for api: PlexAPIService?) -> PlexHeartbeatReporter? {
+        guard heartbeatReportingActive, let api else { return nil }
+        if heartbeatExperiment != nil {
             guard heartbeatExperimentServerURL == api.serverURL, heartbeatExperimentToken == api.token else {
                 heartbeatTestNotice = "Heartbeat stopped: the server or signed-in profile changed."
                 plexHeartbeatOnly = false
                 return nil
             }
-            return heartbeatExperiment
+            return heartbeatQueue
         }
         let experimentID = UUID()
         let experiment = PlexHeartbeatExperiment(api: api, predecessor: heartbeatCleanupTask) { [weak self] message in
@@ -457,7 +463,13 @@ class AppState {
         heartbeatExperiment = experiment
         heartbeatExperimentServerURL = api.serverURL
         heartbeatExperimentToken = api.token
-        return experiment
+        let reporter = PlexHeartbeatReporter(transport: experiment, predecessor: heartbeatCleanupTask) { [weak self] message in
+            guard let self, self.heartbeatExperimentID == experimentID else { return }
+            self.heartbeatTestNotice = message
+            self.plexHeartbeatOnly = false
+        }
+        heartbeatQueue = reporter
+        return reporter
     }
 
     static let plexHeartbeatOnlyDefaultsKey = "couchwave_plex_heartbeat_only_v1"
@@ -473,8 +485,10 @@ class AppState {
 
     var heartbeatReportingActive: Bool { !isDemoMode && backendKind == .plex && plexHeartbeatOnly }
 
-    func applyPlaybackReportingPolicy() {
-        if !heartbeatReportingActive, let experiment = heartbeatExperiment {
+    func closeHeartbeatReporters() {
+        if let experiment = heartbeatExperiment {
+            let cleanup = heartbeatQueue?.disable()
+            heartbeatQueue = nil
             heartbeatExperiment = nil
             heartbeatExperimentID = nil
             heartbeatExperimentServerURL = nil
@@ -482,15 +496,21 @@ class AppState {
             let previousCleanup = heartbeatCleanupTask
             heartbeatCleanupTask = Task {
                 await previousCleanup?.value
+                await cleanup?.value
                 await experiment.cancel()
             }
         }
+    }
+
+    func applyPlaybackReportingPolicy() {
+        if !heartbeatReportingActive { closeHeartbeatReporters() }
         let enabled = !isDemoMode && (syncPlexActivity || heartbeatReportingActive)
         let backend: (any MediaBackend)? = enabled ? api(for: playbackTracker?.item.serverID) : nil
         playbackTracker?.setReporters(
-            plexAPI: heartbeatReportingActive ? heartbeatReporter(for: backend as? PlexAPIService) : backend as? PlexAPIService,
+            plexAPI: heartbeatReportingActive ? nil : backend as? PlexAPIService,
             watchReporter: syncPlexActivity ? backend as? any WatchActivityReporting : nil,
-            reportingMode: heartbeatReportingActive ? .heartbeatOnly : .history
+            reportingMode: heartbeatReportingActive ? .heartbeatOnly : .history,
+            heartbeatReporter: heartbeatReporter(for: backend as? PlexAPIService)
         )
     }
 

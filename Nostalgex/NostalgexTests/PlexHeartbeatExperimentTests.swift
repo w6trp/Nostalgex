@@ -133,25 +133,32 @@ final class PlexHeartbeatCleanupTests: XCTestCase {
         await experiment.reportTimeline(ratingKey: item, key: "/library/metadata/\(item)", state: state,
                                         timeMs: 100, durationMs: 200, sessionID: session)
     }
-    func testTimerExpiryClosesExactSessionWithoutPositionOrWatchedWrite() async {
+    func testHeartbeatContinuesBeyondElevenMinutesWithoutPositionOrWatchedWrite() async {
         let fixture = CleanupFixture(); let clock = HeartbeatTestClock(); let notice = Notice()
         let experiment = experiment(fixture, clock: clock, notice: notice)
         await report(experiment)
-        clock.advance(600); await experiment.observeNow()
+        clock.advance(661); await experiment.observeNow()
         let accepted = await report(experiment)
+        await experiment.cancel()
         let rows = await fixture.snapshot()
-        XCTAssertFalse(accepted); XCTAssertEqual(rows.map(\.state), ["playing", "stopped"])
+        XCTAssertTrue(accepted); XCTAssertEqual(rows.map(\.state), ["playing", "playing", "stopped"])
         XCTAssertTrue(rows.allSatisfy { $0.item == "42" && $0.key == "/library/metadata/42" && $0.session == "exact-session" && $0.time == nil && $0.duration == nil })
         let watched = await fixture.watched; XCTAssertEqual(watched, 0)
-        XCTAssertTrue(notice.text?.contains("10 minutes") == true)
+        XCTAssertNil(notice.text)
     }
-    func testRequestAtCutoffClosesPreviousSessionWithoutStartingNextChannel() async {
+    func testMoreThanTwelveTitlesRemainEligibleAfterOldCutoff() async {
         let fixture = CleanupFixture(); let clock = HeartbeatTestClock(); let experiment = experiment(fixture, clock: clock)
-        await report(experiment); clock.advance(600)
-        let accepted = await report(experiment, item: "43", session: "new-session")
-        XCTAssertFalse(accepted)
+        for number in 1...15 {
+            clock.advance(60)
+            let accepted = await report(experiment, item: "\(number)", session: "session-\(number)")
+            XCTAssertTrue(accepted)
+            await report(experiment, item: "\(number)", session: "session-\(number)", state: "stopped")
+        }
+        await experiment.cancel()
         let rows = await fixture.snapshot()
-        XCTAssertEqual(rows.map(\.item), ["42", "42"]); XCTAssertEqual(rows.map(\.state), ["playing", "stopped"])
+        XCTAssertEqual(rows.count, 30)
+        XCTAssertEqual(Set(rows.map(\.item)).count, 15)
+        XCTAssertTrue(rows.allSatisfy { $0.time == nil && $0.duration == nil })
     }
     func testDisableClosesOnlyCurrentChannelAndNeverRepeatsStop() async {
         let fixture = CleanupFixture(); let experiment = experiment(fixture)
@@ -170,11 +177,12 @@ final class PlexHeartbeatCleanupTests: XCTestCase {
         await experiment.cancel()
         let rows = await fixture.snapshot(); XCTAssertEqual(rows.map(\.state), ["playing", "stopped"])
     }
-    func testBackgroundAndForegroundThenExpiryClosesResumedSession() async {
+    func testBackgroundAndForegroundBeyondOldLimitClosesOnlyOnDisable() async {
         let fixture = CleanupFixture(); let clock = HeartbeatTestClock(); let experiment = experiment(fixture, clock: clock)
         await report(experiment); await report(experiment, state: "stopped")
         clock.advance(590); await report(experiment)
-        clock.advance(10); await experiment.observeNow()
+        clock.advance(100); await experiment.observeNow()
+        await experiment.cancel()
         let rows = await fixture.snapshot(); XCTAssertEqual(rows.map(\.state), ["playing", "stopped", "playing", "stopped"])
         XCTAssertTrue(rows.allSatisfy { $0.session == "exact-session" && $0.time == nil && $0.duration == nil })
     }
@@ -198,7 +206,7 @@ final class PlexHeartbeatCleanupTests: XCTestCase {
         await report(experiment); await fixture.breakReads(); await experiment.cancel()
         let rows = await fixture.snapshot(); XCTAssertEqual(rows.map(\.state), ["playing"])
     }
-    func testChangedStateRefusesExpiryCleanupWrite() async {
+    func testChangedStateStillRefusesCleanupWriteBeyondOldLimit() async {
         let fixture = CleanupFixture(); let clock = HeartbeatTestClock(); let notice = Notice()
         let experiment = experiment(fixture, clock: clock, notice: notice)
         await report(experiment); await fixture.mutate(); clock.advance(600); await experiment.observeNow()

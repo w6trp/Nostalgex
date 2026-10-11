@@ -591,15 +591,15 @@ struct SettingsPageView: View {
                 .accessibilityHint("Updates play counts, resume points and Continue Watching in \(appState.backendDisplayName)")
                 if appState.backendKind == .plex {
                     SettingsToggleRow(
-                        title: "PLEX HEARTBEAT ONLY (EXPERIMENTAL)",
+                        title: "PLEX HEARTBEAT ONLY",
                         subtitle: "Reports the current title and playback state without position, duration or watched marks. Server history effects are being tested.",
-                        warning: appState.plexHeartbeatOnly ? "Test mode: stops if watch-state changes are detected" : nil,
+                        warning: appState.plexHeartbeatOnly ? "No time limit. Verification stops reporting if watch state changes." : nil,
                         isOn: appState.plexHeartbeatOnly,
                         isFocused: focusedItem == "plex_heartbeat"
                     ) { appState.plexHeartbeatOnly.toggle() }
                     .focused($focusedItem, equals: "plex_heartbeat")
                     .id("plex_heartbeat")
-                    .accessibilityHint("Experimental Plex heartbeat; does not enable history and resume sync")
+                    .accessibilityHint("Plex heartbeat; does not enable history and resume sync")
                     if let reason = appState.heartbeatTestNotice {
                         Text(reason).font(.system(size: 16)).foregroundStyle(.orange)
                     }

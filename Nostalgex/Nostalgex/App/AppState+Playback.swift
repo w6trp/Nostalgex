@@ -586,9 +586,10 @@ extension AppState {
             playbackTracker = PlaybackTracker(
                 item: item,
                 seekOffset: Int(currentPartBaseSeconds) + seekOffset,
-                plexAPI: heartbeatReportingActive ? heartbeatReporter(for: reportingBackend as? PlexAPIService) : reportingBackend as? PlexAPIService,
+                plexAPI: heartbeatReportingActive ? nil : reportingBackend as? PlexAPIService,
                 watchReporter: syncPlexActivity ? reportingBackend as? any WatchActivityReporting : nil,
-                reportingMode: heartbeatReportingActive ? .heartbeatOnly : .history
+                reportingMode: heartbeatReportingActive ? .heartbeatOnly : .history,
+                heartbeatReporter: heartbeatReporter(for: reportingBackend as? PlexAPIService)
             )
         }
 
