@@ -6,7 +6,9 @@ Build 52 incorporates the exact ordered `PlexHeartbeatReporter` and narrow HTTP 
 
 Full native suite: 495 passed, 2 optional live harnesses skipped. Tests cover more than eleven simulated minutes, fifteen titles, ordered channel stops, disable during an in-flight request, fresh identities on reactivation, background/foreground, and unchanged privacy payloads. These deterministic tests are not elapsed-time hardware evidence.
 
-Hardware acceptance pending: leave a channel playing for more than eleven minutes; confirm current live visibility and unchanged stored state. Then change channels, disable Heartbeat Only while playback continues, re-enable it, and exit to Home. Verify exact stopped acknowledgements and no sampled-client sessions after cleanup. Check delayed history again without modifying it. Keep History & Resume off. The upstream PR remains draft.
+Build-52 hardware observation completed: one title reported playing for 11 minutes 48 seconds, beyond the former cutoff. Across three aliased titles, the audit captured 83 acknowledged reports and 484 unchanged comparisons of watch count, resume offset, last-viewed time, and history count/digest. Outgoing channels received stopped acknowledgements. Disabling Heartbeat Only while playback continued sent its final stop and left an empty sampled-client session list. Re-enabling then exiting to Home captured five more acknowledged reports, including the final stopped report, 12 unchanged comparisons, and an empty sampled-client session list. No history was reset; History & Resume stayed off.
+
+This establishes the observed sustained-playback and normal lifecycle behavior on the instrumented fork, not a guarantee for every Plex version. Delayed persistence across all previously sampled titles, completion, force-quit and network loss remain unverified. The upstream PR remains draft because its exact integration has not had the same hardware acceptance. Build 53 keeps the shared heartbeat implementation unchanged and adds audio-selection, multipart-episode and diagnostic corrections.
 
 The earlier entries below describe prior builds and their then-current limits.
 

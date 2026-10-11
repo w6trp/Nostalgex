@@ -53,8 +53,8 @@ enum PlaybackDiagnostics {
         for _ in 0..<2 { safe = safe.removingPercentEncoding ?? safe }
         let patterns = [
             #"(?i)\b(?:https?|plex)://[^\s<>"']+"#,
-            #"(?i)authorization\s*[:=]\s*[^\r\n,]+"#,
-            #"(?i)(?:x[-_]plex[-_]token|x[-_]emby[-_]token|access[-_]?token|api[-_]?key|token|password|secret)\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s&,;]+)"#,
+            #"(?i)authorization["']?\s*[:=]\s*[^\r\n,]+"#,
+            #"(?i)(?:x[-_]plex[-_]token|x[-_]emby[-_]token|access[-_]?token|api[-_]?key|token|password|secret)["']?\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s&,;]+)"#,
         ]
         for pattern in patterns {
             guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }

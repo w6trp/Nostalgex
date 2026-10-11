@@ -39,9 +39,15 @@ final class PlaybackDiagnosticsTests: XCTestCase {
             "Authorization: Bearer fixture-four",
             "https%3A%2F%2Fexample.invalid%2Ffile%3FX-Plex-Token%3Dfixture-five",
             "api_key=fixture-six; Token='fixture-seven'",
+            #"{"X-Plex-Token": "fixture-eight", "Authorization": "Bearer fixture-nine"}"#,
+            "X%252DPlex%252DToken%253Dfixture-ten",
+
         ]
         for sample in samples {
             PlaybackDiagnostics.record(outcome: "HTTP 403", title: "Synthetic", detail: sample, defaults: defaults)
+            let persisted = defaults.dictionaryRepresentation().description
+            XCTAssertFalse(persisted.contains("fixture-"), sample)
+            XCTAssertFalse(persisted.contains("user:pass"), sample)
         }
         let rows = PlaybackDiagnostics.recent(defaults: defaults).joined()
         XCTAssertFalse(rows.contains("fixture-"))

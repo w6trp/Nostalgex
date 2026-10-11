@@ -34,6 +34,22 @@ final class PlaybackDecisionTests: XCTestCase {
         XCTAssertEqual(position.offsetSeconds, 15)
     }
 
+    func testPartBoundariesAndMissingDurationDoNotGuessOffsets() {
+        var source = item()
+        source.additionalPartKeys = ["/part2", "/part3"]
+        source.playbackParts = ["/part1", "/part2", "/part3"].map {
+            PlexPartPlaybackInfo(key: $0, container: "mkv", videoCodec: "h264", audioCodec: "aac", bitDepth: 8, doviProfile: nil, durationSeconds: 60)
+        }
+        XCTAssertEqual(source.playbackPosition(at: 60).item.partIndex, 1)
+        XCTAssertEqual(source.playbackPosition(at: 60).offsetSeconds, 0)
+        XCTAssertEqual(source.playbackPosition(at: -20).offsetSeconds, 0)
+        source.playbackParts?[1].durationSeconds = nil
+        let unknown = source.playbackPosition(at: 135)
+        XCTAssertEqual(unknown.item.partKey, source.partKey)
+        XCTAssertEqual(unknown.offsetSeconds, 135)
+        XCTAssertEqual(unknown.baseSeconds, 0)
+    }
+
     func testSelectedVersionAndPartSurviveTranscodeAndPersistence() throws {
         var source = item()
         source.mediaIndex = 2

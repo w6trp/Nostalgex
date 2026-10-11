@@ -158,10 +158,8 @@ extension AppState {
 
                 let tags = group.options.map { Self.languageTag(for: $0) }
                 guard !group.options.isEmpty else { return }
-                let preferredIndex = tags.firstIndex { tag in
-                    guard let tag else { return false }
-                    return tag == preferredLang || tag.hasPrefix(preferredLang + "-")
-                }
+                let preferredIndex = AudioLanguageSelection.preferredOptionIndex(
+                    tags: tags, preferredLanguages: [preferredLang])
                 let defaultOption = playerItem.currentMediaSelection.selectedMediaOption(in: group) ?? group.defaultOption
                 let idx = preferredIndex ?? defaultOption.flatMap { group.options.firstIndex(of: $0) } ?? 0
                 playerItem.select(group.options[idx], in: group)

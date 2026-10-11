@@ -3,6 +3,18 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-10-11 (audio preference correction and sustained heartbeat evidence)
+
+**Shipped.** Build 52 completed the owner-led sustained heartbeat, manual-disable and reactivation/Home tests. Build 53 is signed and installed after the owner confirmed Home. It was left closed; installed version was read back successfully. Upstream PRs [#19](https://github.com/chadMueller/Nostalgex/pull/19), [#20](https://github.com/chadMueller/Nostalgex/pull/20), and [#21](https://github.com/chadMueller/Nostalgex/pull/21) separately cover diagnostic redaction, server-qualified music identity, and selected versions/multipart offsets. None was merged; heartbeat PR #18 remains draft.
+
+**Changed.** A production-code probe reproduced French, Spanish and Dutch preferences selecting English. Canonical language matching now handles two-/three-letter tags and regional variants, respects preference order, and passes the app's explicit language setting into Jellyfin/Emby HLS selection. Local AVFoundation audio matching uses the same normalization and retains the existing default when no preferred track is available. Multipart episodes now keep the complete part stack, as movies already did. Diagnostic redaction also covers quoted JSON credential keys.
+
+**Validation.** The audio probe selected the wrong track in all three fixtures before the fix and the intended track in all three afterward. Full fork suite: 501 passed, 2 optional live harnesses skipped, zero failures. Upstream isolated suites: 437/441/440 passed respectively, with 2 skipped each. Build 52 kept the main title reporting for 11 minutes 48 seconds; 83 acknowledged reports and 484 unchanged state/history comparisons across three titles ended with an empty sampled-client session list after manual disable. Reactivation/Home added five acknowledged reports, 12 unchanged comparisons and a final empty session list.
+
+**Half-done.** Audio tests verify selection and request construction, not audible output or decoder compatibility on hardware. Delayed Plex persistence, completion, force-quit and network-loss cases remain open. No additional audio upstream PR was opened. See `PLAYBACK-REVIEW.md` for the concrete inventory and limits.
+
+**Next.** Exercise multilingual and multi-part sources on hardware during normal viewing, then decide whether to port audio selection as another focused upstream PR. No device playback was interrupted for code work.
+
 ## 2026-10-11 (unlimited heartbeat integration)
 
 **Shipped.** CouchWave 1.0.25 (52) is signed, installed and running on the paired tvOS device after the owner confirmed it was idle. The owner has started the sustained playback test.

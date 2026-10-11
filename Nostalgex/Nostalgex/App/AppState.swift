@@ -576,7 +576,7 @@ class AppState {
         }
     }
 
-    private static let audioLanguageDefaultsKey = "nostalgex_audio_language"
+    private static let audioLanguageDefaultsKey = AudioLanguageSelection.defaultsKey
 
     private static func loadPreferredAudioLanguageInitial() -> String {
         if let s = UserDefaults.standard.string(forKey: audioLanguageDefaultsKey), !s.isEmpty {

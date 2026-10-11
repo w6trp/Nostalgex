@@ -429,6 +429,10 @@ struct PlexAPIService: MediaBackend {
             imdbID: show.imdbID,
             librarySource: .tv,
             serverID: serverID.isEmpty ? nil : serverID,
+            additionalPartKeys: {
+                let extra = (media?.Part ?? []).dropFirst().compactMap { $0.key }
+                return extra.isEmpty ? nil : Array(extra)
+            }(),
             videoBitDepth: media?.videoStream?.bitDepth,
             doviProfile: media?.videoStream?.DOVIProfile,
             videoWidth: media?.width,
