@@ -19,7 +19,7 @@ actor PlexHeartbeatExperiment: PlexPlaybackReporting {
         var sessionStates: [String]?
         var detail: String?
     }
-    enum Failure: Error { case unavailable, incomplete, changed, expired }
+    enum Failure: Error { case unavailable, incomplete, changed, expired, auditUnavailable }
     let api: PlexAPIService
     let onStop: @MainActor @Sendable (String) -> Void
     private let read: @Sendable (String, [URLQueryItem]) async throws -> [String: Any]
@@ -27,6 +27,8 @@ actor PlexHeartbeatExperiment: PlexPlaybackReporting {
     private var baseline: [String: StoredState] = [:]
     private var aliases: [String: String] = [:]
     private var records: [Audit] = []
+    private var auditAvailable = true
+    private let auditWriter: @Sendable (Data) throws -> Void
     private var stopped = false
     private var startedAt: Date?
     private var pending: Task<Bool, Never>?
@@ -34,8 +36,10 @@ actor PlexHeartbeatExperiment: PlexPlaybackReporting {
 
     init(api: PlexAPIService, sender: (any PlexPlaybackReporting)? = nil,
          read: (@Sendable (String, [URLQueryItem]) async throws -> [String: Any])? = nil,
+         auditWriter: (@Sendable (Data) throws -> Void)? = nil,
          onStop: @escaping @MainActor @Sendable (String) -> Void) {
         self.api = api; self.onStop = onStop
+        self.auditWriter = auditWriter ?? Self.writeAudit
         self.sender = sender ?? api
         self.read = read ?? { path, query in try await api.heartbeatRead(path: path, query: query) }
     }
@@ -61,6 +65,7 @@ actor PlexHeartbeatExperiment: PlexPlaybackReporting {
                 startedAt = Date()
                 append(Audit(event: "started", detail: "Position-free heartbeat; 10-minute maximum; no watched calls"))
             }
+            guard auditAvailable else { throw Failure.auditUnavailable }
             guard Date().timeIntervalSince(startedAt!) < 600 else { throw Failure.expired }
             if baseline[ratingKey] == nil {
                 guard baseline.count < 12 else { throw Failure.incomplete }
@@ -74,6 +79,7 @@ actor PlexHeartbeatExperiment: PlexPlaybackReporting {
             _ = try await readSessionStates()
             try await checkAll()
             guard !stopped, !Task.isCancelled else { return false }
+            guard auditAvailable else { throw Failure.auditUnavailable }
             let acknowledged = await sender.reportTimeline(ratingKey: ratingKey, key: key, state: state,
                                                          timeMs: nil, durationMs: nil, sessionID: sessionID)
             append(Audit(event: "heartbeat", item: aliases[ratingKey], detail: acknowledged ? state : "request failed"))
@@ -81,6 +87,7 @@ actor PlexHeartbeatExperiment: PlexPlaybackReporting {
             try await checkAll()
             let states = try await readSessionStates()
             append(Audit(event: "sessions", sessionStates: states))
+            guard auditAvailable else { throw Failure.auditUnavailable }
             if observer == nil {
                 observer = Task { [weak self] in
                     while !Task.isCancelled {
@@ -111,6 +118,7 @@ actor PlexHeartbeatExperiment: PlexPlaybackReporting {
             let current = try await readState(key)
             append(Audit(event: "comparison", item: aliases[key], stored: current,
                          detail: original == current ? "unchanged" : "PERSISTENT STATE CHANGED"))
+            guard auditAvailable else { throw Failure.auditUnavailable }
             if original != current { throw Failure.changed }
         }
     }
@@ -122,6 +130,7 @@ actor PlexHeartbeatExperiment: PlexPlaybackReporting {
         let message: String
         switch error {
         case Failure.changed: message = "Heartbeat stopped: Plex watch state or history changed. No history was reset."
+        case Failure.auditUnavailable: message = "Heartbeat stopped: the verification audit could not be saved."
         case Failure.expired: message = "Heartbeat test finished after 10 minutes. Review the saved observations."
         default: message = "Heartbeat stopped: Plex verification was unavailable or incomplete."
         }
@@ -184,13 +193,20 @@ actor PlexHeartbeatExperiment: PlexPlaybackReporting {
     private func append(_ record: Audit) {
         records.append(record)
         if records.count > 2000 { records.removeFirst(records.count - 2000) }
-        guard let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
         do {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            try encoder.encode(records).write(to: directory.appendingPathComponent("couchwave-heartbeat-audit.json"), options: .atomic)
-        } catch { /* Never print credential-bearing error context. */ }
+            try auditWriter(encoder.encode(records))
+        } catch { auditAvailable = false } // Do not expose credential-bearing error context.
+    }
+
+    nonisolated static func writeAudit(_ data: Data) throws {
+        // tvOS permits purgeable local files in Caches, not persistent Documents.
+        guard let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else {
+            throw Failure.auditUnavailable
+        }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try data.write(to: directory.appendingPathComponent("couchwave-heartbeat-audit.json"), options: .atomic)
     }
 }
 

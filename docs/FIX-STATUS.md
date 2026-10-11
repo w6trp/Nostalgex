@@ -13,7 +13,7 @@ or a claim that every review concern has been resolved on hardware.
 | Compatibility fallback | Do not raise the selected quality ceiling; force video conversion when copying cannot decode; reject concrete unsupported bit-depth/profile cases. |
 | Multipart accounting | Keep one tracker and aggregate source positions across parts; use exact whole/part metadata and withhold multipart reporting when a reliable whole duration is unavailable. |
 | Playback reporting | Use sampled playback state/position, ordered writes, server acknowledgement and rate-limited retries. Apply changes to reporting preference immediately. |
-| Privacy defaults | Require a new explicit history/resume opt-in; do not silently migrate an old activity-sync opt-in. No verified history-free active-session mode is enabled. |
+| Privacy defaults | Require a new explicit history/resume opt-in; do not silently migrate an old activity-sync opt-in. A separate bounded Plex heartbeat experiment omits position/duration and watched writes; its server effects remain under verification. |
 | Multi-server identity | Use server-qualified item identities for native pools/music caches and browser manifests, blacklist and caches. |
 | Refresh and authentication | Preserve the working lineup when a background scan is incomplete; reject canceled/stale sign-in and music work. |
 | Guide | Keep current programs authoritative when channels overlap; use calendar day boundaries and persist partial-block source offsets; enforce the selected native block deadline with guarded retuning. |
@@ -37,16 +37,14 @@ tvOS app. [CI run 38155433349](https://github.com/w6trp/Nostalgex/actions/runs/3
 NostalgexTests: 464 passed, 2 opt-in live harnesses skipped, none failed. Web checks
 and build also passed. The CouchWave identity change subsequently passed local Xcode
 27.0 device compilation and the tvOS 27 simulator suite (464 passed, 2 skipped).
-CouchWave 1.0.25 (46), source `f508c21`, was subsequently signed, installed and launched on a physical Apple TV running tvOS 27.0. Playback and remote-control acceptance remain pending. No real user's media or watch state was used for the reporting investigation.
+CouchWave 1.0.25 (46), source `f508c21`, was subsequently signed, installed and launched on a physical Apple TV running tvOS 27.0. Subsequent builds 47/48 added an explicitly owner-authorized existing-profile heartbeat experiment. Build 48 audit collection verified live visibility and unchanged stored fields/history across five sampled titles, but exposed dropped stop reports on channel changes. Build 50 subsequently verified normal-exit stop reporting and unchanged post-stop fields, and passed 474 native tests with 2 skipped. Broader playback and remote-control acceptance remain incomplete.
 
 See the latest [development log](DEVLOG.md) for measured results and
 [fork testing guide](FORK-TESTING.md) for reproduction and device setup.
 
 ## Remaining concerns and decisions
 
-- **Plex live visibility without retained history/resume:** no verified supported
-  mode in the documented timeline API. Leave history sync off; a future experiment
-  requires explicitly authorized disposable data and before/after server checks. See [the prepared verification plan and read-only observer](PLEX-ACTIVITY-VERIFICATION.md).
+- **Plex live visibility without retained history/resume:** the separately authorized heartbeat experiment uses the existing profile and stops on changed stored state or incomplete verification. Initial observations are promising but are not a general guarantee. Builds 49/50 verified channel-change stops and normal exit-to-Home, including an empty sampled-client session list and unchanged post-stop fields/history. Long playback, completion, delayed persistence, force-quit and network-loss cases still need coverage. History/resume sync stays off. See [the verification plan and observations](PLEX-ACTIVITY-VERIFICATION.md).
 - **Native integration:** AVPlayer behavior, callback races, server negotiation,
   audio/subtitle output, remote focus and Top Shelf rendering still need
   physical-device validation. Offline checks do not establish codec support on

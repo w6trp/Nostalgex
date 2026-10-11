@@ -3,6 +3,42 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-10-11 (normal-exit stop reporting)
+
+**Shipped.** CouchWave 1.0.25 (50) is signed, installed and running on the paired tvOS device.
+
+**Changed.** Normal app backgrounding now requests a bounded UIKit background task until the outgoing tracker's queued reporting and guarded observations finish, or the OS expires the budget. Build 49 fixed channel changes, but a Home-screen exit suspended the app midway through pre-stop verification. No unbounded background playback or reporting is enabled.
+
+**Validation.** The full native suite passed 474 tests with 2 optional live harnesses skipped. Signed build and strict codesign verification passed. Build 49 had five acknowledged channel-change stops and 150 unchanged stored-state comparisons across six titles, including an existing resume position. Build 50 then captured 15 acknowledged reports and 72 unchanged comparisons across two titles over 105 seconds. The final Home-screen exit produced an acknowledged stopped report, unchanged post-write state, and an empty sampled-client session list. An existing resume offset stayed intact.
+
+**Half-done.** The OS may deny or expire background time, and force-quit/network-loss cases are not verified. The heartbeat experiment remains bounded to ten minutes and is not a general no-history guarantee.
+
+**Next.** Keep the ten-minute experimental limit while extending coverage to long playback, completion, network loss and forced termination. The audit evidence remains local and is not committed.
+
+## 2026-10-11 (channel-change stop reporting)
+
+**Shipped.** CouchWave 1.0.25 (49) is signed, installed and running on the paired tvOS device with the approved bounded heartbeat experiment.
+
+**Changed.** A queued reporting task now keeps the outgoing tracker alive until its queue drains. Previously a channel change released the tracker before the task began, dropping the final stopped report and leaving stale Plex playing sessions. The temporary reference ends after the queue drains.
+
+**Validation.** A harness running production tracker code reported only playing before the fix, and playing followed by stopped after it; the tracker was released in both cases. The full native suite passed 474 tests with 2 optional live harnesses skipped, including the new lifetime regression. The focused simulator reproduction runner stalled and was stopped; the portable reproduction and subsequent full suite completed. Signed build and strict codesign verification passed. Initial live build-49 observations show stopped acknowledgements for outgoing channels and only the current sampled item playing, with stored state still unchanged.
+
+**Half-done.** Final exit-to-Home and post-stop observation are pending. The app's live-TV Play/Pause command shows its overlay; returning to the guide retains preview playback. Neither action should be described as a pause or stop test. Existing stale entries from earlier builds are outside the new tracker lifetime.
+
+**Next.** Collect the final device audit, including outgoing stopped reports and stored-state comparisons. Do not treat a bounded test as a general no-history guarantee.
+
+## 2026-10-11 (heartbeat audit storage correction)
+
+**Shipped.** CouchWave 1.0.25 (48) is signed, installed and running on the paired tvOS device. The previous build's Documents audit could not be retrieved even with the setting enabled and playback active.
+
+**Changed.** The audit now uses the tvOS cache directory. Audit-write failure prevents further heartbeat requests instead of being silently ignored. No server history is reset, and the existing ten-minute observation limit remains.
+
+**Validation.** Native suite passed 473 tests with 2 optional live harnesses skipped. New tests verify cache readback and zero heartbeat writes when audit storage fails. Signed build and strict codesign verification passed. The physical-device cache audit is retrievable: Plex acknowledges position-free heartbeats and its session endpoint reports the app's item as playing. Initial stored watch count, resume field, last-viewed timestamp and history digest comparisons are unchanged.
+
+**Half-done.** The bounded build-48 run captured five titles, 20 acknowledged heartbeats and 158 unchanged stored-state comparisons over 135 seconds. It also exposed stale playing sessions: the outgoing tracker was released before its queued stop report began. The live UI does not pause, and the guide retains preview playback, so those interactions do not verify pause/stop. These observations do not establish a general history-free guarantee or validate the previous build's uncollected period.
+
+**Next.** Collect the final bounded audit and document any changed fields. Keep reporting off if verification fails or persisted state changes.
+
 ## 2026-10-11 (approved heartbeat beta)
 
 **Shipped.** CouchWave 1.0.25 (47) is signed, installed and launched on the paired tvOS 27 device. The owner explicitly approved a heartbeat-only experiment with the existing Plex profile, superseding the earlier isolation requirement. The launch requests heartbeat mode only; observed server effects are still pending.

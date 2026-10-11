@@ -25,6 +25,24 @@ private actor HeartbeatFixture: PlexPlaybackReporting {
 @MainActor
 final class PlexHeartbeatExperimentTests: XCTestCase {
     private final class Notice { var value: String? }
+    func testAuditStorageFailurePreventsHeartbeat() async {
+        let fixture = HeartbeatFixture(); let notice = Notice()
+        let experiment = PlexHeartbeatExperiment(api: .init(serverURL: "https://synthetic.invalid", token: "test"),
+            sender: fixture, read: { path, _ in try await fixture.read(path) },
+            auditWriter: { _ in throw PlexHeartbeatExperiment.Failure.auditUnavailable },
+            onStop: { notice.value = $0 })
+        let accepted = await experiment.reportTimeline(ratingKey: "42", key: "/library/metadata/42", state: "playing",
+                                                        timeMs: nil, durationMs: nil, sessionID: "test")
+        XCTAssertFalse(accepted)
+        let calls = await fixture.result(); XCTAssertEqual(calls.0, 0)
+        XCTAssertTrue(notice.value?.contains("audit could not be saved") == true)
+    }
+    func testAuditIsRetrievableFromTVOSCache() throws {
+        let payload = Data("[]".utf8)
+        try PlexHeartbeatExperiment.writeAudit(payload)
+        let cache = try XCTUnwrap(FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first)
+        XCTAssertEqual(try Data(contentsOf: cache.appendingPathComponent("couchwave-heartbeat-audit.json")), payload)
+    }
     func testPersistentMutationStopsExperimentAndRefusesNextWrite() async {
         let fixture = HeartbeatFixture(mutate: true); let notice = Notice()
         let experiment = PlexHeartbeatExperiment(api: .init(serverURL: "https://synthetic.invalid", token: "test"),

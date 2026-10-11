@@ -208,8 +208,10 @@ final class PlaybackTracker {
         reportQueue.append(operation)
         guard reportTask == nil else { return }
         let generation = reportGeneration
-        reportTask = Task { @MainActor [weak self] in
-            guard let self else { return }
+        // AppState drops the outgoing tracker synchronously on a channel change.
+        // Keep it alive until queued reports (especially stopped) have drained.
+        // Clearing reportTask below breaks this temporary ownership cycle.
+        reportTask = Task { @MainActor [self] in
             while !Task.isCancelled, self.reportGeneration == generation, !self.reportQueue.isEmpty {
                 let operation = self.reportQueue.removeFirst()
                 await operation()

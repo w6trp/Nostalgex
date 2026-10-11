@@ -70,6 +70,22 @@ final class PlaybackTrackerTests: XCTestCase {
                         automaticallySchedulesTimer: false)
     }
 
+    func testStopSurvivesImmediateTrackerReleaseOnChannelChange() async throws {
+        let api = RecordingPlexReporting(); let clock = Clock()
+        var outgoing: PlaybackTracker? = tracker(api, clock)
+        weak var releasedTracker = outgoing
+        outgoing?.onPlaybackReady()
+        outgoing?.onPlaybackUpdate(positionSeconds: 1, state: .playing)
+        await outgoing?.waitForPendingReports()
+        outgoing?.stop()
+        // AppState replaces its outgoing tracker synchronously during channel surfing.
+        outgoing = nil
+        for _ in 0..<100 { await Task.yield() }
+        let result = await api.snapshot()
+        XCTAssertEqual(result.states, ["playing", "stopped"])
+        XCTAssertNil(releasedTracker, "The report task must release the tracker after draining")
+    }
+
     func testHeartbeatOmitsPositionDurationAndNeverScrobblesAcrossCompletion() async throws {
         let api = RecordingPlexReporting(); let clock = Clock()
         let t = PlaybackTracker(item: item(), seekOffset: 0, plexAPI: api,

@@ -58,13 +58,38 @@ class AppState {
     /// Used only by analytics — no UI depends on it.
     private var analyticsSessionStartedAt: Date = Date()
 
+    private var backgroundReportingTask: UIBackgroundTaskIdentifier = .invalid
+
+    /// Keep normal app-exit reporting alive long enough to finish the final stop
+    /// and guarded post-write observations. The OS can still expire this budget.
+    private func reportPlaybackBackgrounded() {
+        guard let tracker = playbackTracker else { return }
+        endBackgroundReporting()
+        let identifier = UIApplication.shared.beginBackgroundTask(withName: "Finish playback reporting") { [weak self] in
+            self?.endBackgroundReporting()
+        }
+        backgroundReportingTask = identifier
+        tracker.onBackground()
+        Task { @MainActor [weak self, tracker] in
+            await tracker.waitForPendingReports()
+            guard let self, self.backgroundReportingTask == identifier else { return }
+            self.endBackgroundReporting()
+        }
+    }
+
+    private func endBackgroundReporting() {
+        guard backgroundReportingTask != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundReportingTask)
+        backgroundReportingTask = .invalid
+    }
+
     private func setupBackgroundObservers() {
         NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 // Flush watch time before the tracker's own background handler zeroes it.
                 self?.emitPlaybackStoppedForActiveSession()
-                self?.playbackTracker?.onBackground()
+                self?.reportPlaybackBackgrounded()
                 self?.suspendPlayback()
                 // Then close out the foreground period. Ordering matters: watch time
                 // rides its own signal, and app.session.ended is the umbrella around
